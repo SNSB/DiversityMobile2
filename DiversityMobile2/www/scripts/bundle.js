@@ -92,11 +92,5770 @@ process.chdir = function (dir) {
 process.umask = function() { return 0; };
 
 },{}],2:[function(require,module,exports){
+(function (process){
+/*! hellojs v1.9.8 | (c) 2012-2015 Andrew Dodson | MIT https://adodson.com/hello.js/LICENSE */
+// ES5 Object.create
+if (!Object.create) {
+
+	// Shim, Object create
+	// A shim for Object.create(), it adds a prototype to a new object
+	Object.create = (function() {
+
+		function F() {}
+
+		return function(o) {
+
+			if (arguments.length != 1) {
+				throw new Error('Object.create implementation only accepts one parameter.');
+			}
+
+			F.prototype = o;
+			return new F();
+		};
+
+	})();
+
+}
+
+// ES5 Object.keys
+if (!Object.keys) {
+	Object.keys = function(o, k, r) {
+		r = [];
+		for (k in o) {
+			if (r.hasOwnProperty.call(o, k))
+				r.push(k);
+		}
+
+		return r;
+	};
+}
+
+// ES5 [].indexOf
+if (!Array.prototype.indexOf) {
+	Array.prototype.indexOf = function(s) {
+
+		for (var j = 0; j < this.length; j++) {
+			if (this[j] === s) {
+				return j;
+			}
+		}
+
+		return -1;
+	};
+}
+
+// ES5 [].forEach
+if (!Array.prototype.forEach) {
+	Array.prototype.forEach = function(fun/*, thisArg*/) {
+
+		if (this === void 0 || this === null) {
+			throw new TypeError();
+		}
+
+		var t = Object(this);
+		var len = t.length >>> 0;
+		if (typeof fun !== 'function') {
+			throw new TypeError();
+		}
+
+		var thisArg = arguments.length >= 2 ? arguments[1] : void 0;
+		for (var i = 0; i < len; i++) {
+			if (i in t) {
+				fun.call(thisArg, t[i], i, t);
+			}
+		}
+
+		return this;
+	};
+}
+
+// ES5 [].filter
+if (!Array.prototype.filter) {
+	Array.prototype.filter = function(fun, thisArg) {
+
+		var a = [];
+		this.forEach(function(val, i, t) {
+			if (fun.call(thisArg || void 0, val, i, t)) {
+				a.push(val);
+			}
+		});
+
+		return a;
+	};
+}
+
+// Production steps of ECMA-262, Edition 5, 15.4.4.19
+// Reference: http://es5.github.io/#x15.4.4.19
+if (!Array.prototype.map) {
+
+	Array.prototype.map = function(fun, thisArg) {
+
+		var a = [];
+		this.forEach(function(val, i, t) {
+			a.push(fun.call(thisArg || void 0, val, i, t));
+		});
+
+		return a;
+	};
+}
+
+// ES5 isArray
+if (!Array.isArray) {
+
+	// Function Array.isArray
+	Array.isArray = function(o) {
+		return Object.prototype.toString.call(o) === '[object Array]';
+	};
+
+}
+
+// Test for location.assign
+if (typeof window === 'object' && typeof window.location === 'object' && !window.location.assign) {
+
+	window.location.assign = function(url) {
+		window.location = url;
+	};
+
+}
+
+// Test for Function.bind
+if (!Function.prototype.bind) {
+
+	// MDN
+	// Polyfill IE8, does not support native Function.bind
+	Function.prototype.bind = function(b) {
+
+		if (typeof this !== 'function') {
+			throw new TypeError('Function.prototype.bind - what is trying to be bound is not callable');
+		}
+
+		function C() {}
+
+		var a = [].slice;
+		var f = a.call(arguments, 1);
+		var _this = this;
+		var D = function() {
+			return _this.apply(this instanceof C ? this : b || window, f.concat(a.call(arguments)));
+		};
+
+		C.prototype = this.prototype;
+		D.prototype = new C();
+
+		return D;
+	};
+
+}
+
+/**
+ * @hello.js
+ *
+ * HelloJS is a client side Javascript SDK for making OAuth2 logins and subsequent REST calls.
+ *
+ * @author Andrew Dodson
+ * @website https://adodson.com/hello.js/
+ *
+ * @copyright Andrew Dodson, 2012 - 2015
+ * @license MIT: You are free to use and modify this code for any use, on the condition that this copyright notice remains.
+ */
+
+var hello = function(name) {
+	return hello.use(name);
+};
+
+hello.utils = {
+
+	// Extend the first object with the properties and methods of the second
+	extend: function(r /*, a[, b[, ...]] */) {
+
+		// Get the arguments as an array but ommit the initial item
+		Array.prototype.slice.call(arguments, 1).forEach(function(a) {
+			if (r instanceof Object && a instanceof Object && r !== a) {
+				for (var x in a) {
+					r[x] = hello.utils.extend(r[x], a[x]);
+				}
+			}
+			else {
+				r = a;
+			}
+		});
+
+		return r;
+	}
+};
+
+// Core library
+hello.utils.extend(hello, {
+
+	settings: {
+
+		// OAuth2 authentication defaults
+		redirect_uri: window.location.href.split('#')[0],
+		response_type: 'token',
+		display: 'popup',
+		state: '',
+
+		// OAuth1 shim
+		// The path to the OAuth1 server for signing user requests
+		// Want to recreate your own? Checkout https://github.com/MrSwitch/node-oauth-shim
+		oauth_proxy: 'https://auth-server.herokuapp.com/proxy',
+
+		// API timeout in milliseconds
+		timeout: 20000,
+
+		// Popup Options
+		popup: {
+			resizable: 1,
+			scrollbars: 1,
+			width: 500,
+			height: 550
+		},
+
+		// Default service / network
+		default_service: null,
+
+		// Force authentication
+		// When hello.login is fired.
+		// (null): ignore current session expiry and continue with login
+		// (true): ignore current session expiry and continue with login, ask for user to reauthenticate
+		// (false): if the current session looks good for the request scopes return the current session.
+		force: null,
+
+		// Page URL
+		// When 'display=page' this property defines where the users page should end up after redirect_uri
+		// Ths could be problematic if the redirect_uri is indeed the final place,
+		// Typically this circumvents the problem of the redirect_url being a dumb relay page.
+		page_uri: window.location.href
+	},
+
+	// Service configuration objects
+	services: {},
+
+	// Use
+	// Define a new instance of the HelloJS library with a default service
+	use: function(service) {
+
+		// Create self, which inherits from its parent
+		var self = Object.create(this);
+
+		// Inherit the prototype from its parent
+		self.settings = Object.create(this.settings);
+
+		// Define the default service
+		if (service) {
+			self.settings.default_service = service;
+		}
+
+		// Create an instance of Events
+		self.utils.Event.call(self);
+
+		return self;
+	},
+
+	// Initialize
+	// Define the client_ids for the endpoint services
+	// @param object o, contains a key value pair, service => clientId
+	// @param object opts, contains a key value pair of options used for defining the authentication defaults
+	// @param number timeout, timeout in seconds
+	init: function(services, options) {
+
+		var utils = this.utils;
+
+		if (!services) {
+			return this.services;
+		}
+
+		// Define provider credentials
+		// Reformat the ID field
+		for (var x in services) {if (services.hasOwnProperty(x)) {
+			if (typeof (services[x]) !== 'object') {
+				services[x] = {id: services[x]};
+			}
+		}}
+
+		// Merge services if there already exists some
+		utils.extend(this.services, services);
+
+		// Format the incoming
+		for (x in this.services) {
+			if (this.services.hasOwnProperty(x)) {
+				this.services[x].scope = this.services[x].scope || {};
+			}
+		}
+
+		//
+		// Update the default settings with this one.
+		if (options) {
+			utils.extend(this.settings, options);
+
+			// Do this immediatly incase the browser changes the current path.
+			if ('redirect_uri' in options) {
+				this.settings.redirect_uri = utils.url(options.redirect_uri).href;
+			}
+		}
+
+		return this;
+	},
+
+	// Login
+	// Using the endpoint
+	// @param network stringify       name to connect to
+	// @param options object    (optional)  {display mode, is either none|popup(default)|page, scope: email,birthday,publish, .. }
+	// @param callback  function  (optional)  fired on signin
+	login: function() {
+
+		// Create an object which inherits its parent as the prototype and constructs a new event chain.
+		var _this = this;
+		var utils = _this.utils;
+		var error = utils.error;
+		var promise = utils.Promise();
+
+		// Get parameters
+		var p = utils.args({network: 's', options: 'o', callback: 'f'}, arguments);
+
+		// Local vars
+		var url;
+
+		// Get all the custom options and store to be appended to the querystring
+		var qs = utils.diffKey(p.options, _this.settings);
+
+		// Merge/override options with app defaults
+		var opts = p.options = utils.merge(_this.settings, p.options || {});
+
+		// Merge/override options with app defaults
+		opts.popup = utils.merge(_this.settings.popup, p.options.popup || {});
+
+		// Network
+		p.network = p.network || _this.settings.default_service;
+
+		// Bind callback to both reject and fulfill states
+		promise.proxy.then(p.callback, p.callback);
+
+		// Trigger an event on the global listener
+		function emit(s, value) {
+			hello.emit(s, value);
+		}
+
+		promise.proxy.then(emit.bind(this, 'auth.login auth'), emit.bind(this, 'auth.failed auth'));
+
+		// Is our service valid?
+		if (typeof (p.network) !== 'string' || !(p.network in _this.services)) {
+			// Trigger the default login.
+			// Ahh we dont have one.
+			return promise.reject(error('invalid_network', 'The provided network was not recognized'));
+		}
+
+		var provider = _this.services[p.network];
+
+		// Create a global listener to capture events triggered out of scope
+		var callbackId = utils.globalEvent(function(str) {
+
+			// The responseHandler returns a string, lets save this locally
+			var obj;
+
+			if (str) {
+				obj = JSON.parse(str);
+			}
+			else {
+				obj = error('cancelled', 'The authentication was not completed');
+			}
+
+			// Handle these response using the local
+			// Trigger on the parent
+			if (!obj.error) {
+
+				// Save on the parent window the new credentials
+				// This fixes an IE10 bug i think... atleast it does for me.
+				utils.store(obj.network, obj);
+
+				// Fulfill a successful login
+				promise.fulfill({
+					network: obj.network,
+					authResponse: obj
+				});
+			}
+			else {
+				// Reject a successful login
+				promise.reject(obj);
+			}
+		});
+
+		var redirectUri = utils.url(opts.redirect_uri).href;
+
+		// May be a space-delimited list of multiple, complementary types
+		var responseType = provider.oauth.response_type || opts.response_type;
+
+		// Fallback to token if the module hasn't defined a grant url
+		if (/\bcode\b/.test(responseType) && !provider.oauth.grant) {
+			responseType = responseType.replace(/\bcode\b/, 'token');
+		}
+
+		// Query string parameters, we may pass our own arguments to form the querystring
+		p.qs = utils.merge(qs, {
+			client_id: encodeURIComponent(provider.id),
+			response_type: encodeURIComponent(responseType),
+			redirect_uri: encodeURIComponent(redirectUri),
+			display: opts.display,
+			scope: 'basic',
+			state: {
+				client_id: provider.id,
+				network: p.network,
+				display: opts.display,
+				callback: callbackId,
+				state: opts.state,
+				redirect_uri: redirectUri
+			}
+		});
+
+		// Get current session for merging scopes, and for quick auth response
+		var session = utils.store(p.network);
+
+		// Scopes (authentication permisions)
+		// Ensure this is a string - IE has a problem moving Arrays between windows
+		// Append the setup scope
+		var SCOPE_SPLIT = /[,\s]+/;
+		var scope = (opts.scope || '').toString() + ',' + p.qs.scope;
+
+		// Append scopes from a previous session.
+		// This helps keep app credentials constant,
+		// Avoiding having to keep tabs on what scopes are authorized
+		if (session && 'scope' in session && session.scope instanceof String) {
+			scope += ',' + session.scope;
+		}
+
+		// Convert scope to an Array
+		// - easier to manipulate
+		scope = scope.split(SCOPE_SPLIT);
+
+		// Format remove duplicates and empty values
+		scope = utils.unique(scope).filter(filterEmpty);
+
+		// Save the the scopes to the state with the names that they were requested with.
+		p.qs.state.scope = scope.join(',');
+
+		// Map scopes to the providers naming convention
+		scope = scope.map(function(item) {
+			// Does this have a mapping?
+			if (item in provider.scope) {
+				return provider.scope[item];
+			}
+			else {
+				// Loop through all services and determine whether the scope is generic
+				for (var x in _this.services) {
+					var serviceScopes = _this.services[x].scope;
+					if (serviceScopes && item in serviceScopes) {
+						// Found an instance of this scope, so lets not assume its special
+						return '';
+					}
+				}
+
+				// This is a unique scope to this service so lets in it.
+				return item;
+			}
+
+		});
+
+		// Stringify and Arrayify so that double mapped scopes are given the chance to be formatted
+		scope = scope.join(',').split(SCOPE_SPLIT);
+
+		// Again...
+		// Format remove duplicates and empty values
+		scope = utils.unique(scope).filter(filterEmpty);
+
+		// Join with the expected scope delimiter into a string
+		p.qs.scope = scope.join(provider.scope_delim || ',');
+
+		// Is the user already signed in with the appropriate scopes, valid access_token?
+		if (opts.force === false) {
+
+			if (session && 'access_token' in session && session.access_token && 'expires' in session && session.expires > ((new Date()).getTime() / 1e3)) {
+				// What is different about the scopes in the session vs the scopes in the new login?
+				var diff = utils.diff((session.scope || '').split(SCOPE_SPLIT), (p.qs.state.scope || '').split(SCOPE_SPLIT));
+				if (diff.length === 0) {
+
+					// OK trigger the callback
+					promise.fulfill({
+						unchanged: true,
+						network: p.network,
+						authResponse: session
+					});
+
+					// Nothing has changed
+					return promise;
+				}
+			}
+		}
+
+		// Page URL
+		if (opts.display === 'page' && opts.page_uri) {
+			// Add a page location, place to endup after session has authenticated
+			p.qs.state.page_uri = utils.url(opts.page_uri).href;
+		}
+
+		// Bespoke
+		// Override login querystrings from auth_options
+		if ('login' in provider && typeof (provider.login) === 'function') {
+			// Format the paramaters according to the providers formatting function
+			provider.login(p);
+		}
+
+		// Add OAuth to state
+		// Where the service is going to take advantage of the oauth_proxy
+		if (!/\btoken\b/.test(responseType) ||
+		parseInt(provider.oauth.version, 10) < 2 ||
+		(opts.display === 'none' && provider.oauth.grant && session && session.refresh_token)) {
+
+			// Add the oauth endpoints
+			p.qs.state.oauth = provider.oauth;
+
+			// Add the proxy url
+			p.qs.state.oauth_proxy = opts.oauth_proxy;
+
+		}
+
+		// Convert state to a string
+		p.qs.state = encodeURIComponent(JSON.stringify(p.qs.state));
+
+		// URL
+		if (parseInt(provider.oauth.version, 10) === 1) {
+
+			// Turn the request to the OAuth Proxy for 3-legged auth
+			url = utils.qs(opts.oauth_proxy, p.qs, encodeFunction);
+		}
+
+		// Refresh token
+		else if (opts.display === 'none' && provider.oauth.grant && session && session.refresh_token) {
+
+			// Add the refresh_token to the request
+			p.qs.refresh_token = session.refresh_token;
+
+			// Define the request path
+			url = utils.qs(opts.oauth_proxy, p.qs, encodeFunction);
+		}
+		else {
+			url = utils.qs(provider.oauth.auth, p.qs, encodeFunction);
+		}
+
+		// Execute
+		// Trigger how we want self displayed
+		if (opts.display === 'none') {
+			// Sign-in in the background, iframe
+			utils.iframe(url, redirectUri);
+		}
+
+		// Triggering popup?
+		else if (opts.display === 'popup') {
+
+			var popup = utils.popup(url, redirectUri, opts.popup);
+
+			var timer = setInterval(function() {
+				if (!popup || popup.closed) {
+					clearInterval(timer);
+					if (!promise.state) {
+
+						var response = error('cancelled', 'Login has been cancelled');
+
+						if (!popup) {
+							response = error('blocked', 'Popup was blocked');
+						}
+
+						response.network = p.network;
+
+						promise.reject(response);
+					}
+				}
+			}, 100);
+		}
+
+		else {
+			window.location = url;
+		}
+
+		return promise.proxy;
+
+		function encodeFunction(s) {return s;}
+
+		function filterEmpty(s) {return !!s;}
+	},
+
+	// Remove any data associated with a given service
+	// @param string name of the service
+	// @param function callback
+	logout: function() {
+
+		var _this = this;
+		var utils = _this.utils;
+		var error = utils.error;
+
+		// Create a new promise
+		var promise = utils.Promise();
+
+		var p = utils.args({name:'s', options: 'o', callback: 'f'}, arguments);
+
+		p.options = p.options || {};
+
+		// Add callback to events
+		promise.proxy.then(p.callback, p.callback);
+
+		// Trigger an event on the global listener
+		function emit(s, value) {
+			hello.emit(s, value);
+		}
+
+		promise.proxy.then(emit.bind(this, 'auth.logout auth'), emit.bind(this, 'error'));
+
+		// Network
+		p.name = p.name || this.settings.default_service;
+		p.authResponse = utils.store(p.name);
+
+		if (p.name && !(p.name in _this.services)) {
+
+			promise.reject(error('invalid_network', 'The network was unrecognized'));
+
+		}
+		else if (p.name && p.authResponse) {
+
+			// Define the callback
+			var callback = function(opts) {
+
+				// Remove from the store
+				utils.store(p.name, '');
+
+				// Emit events by default
+				promise.fulfill(hello.utils.merge({network:p.name}, opts || {}));
+			};
+
+			// Run an async operation to remove the users session
+			var _opts = {};
+			if (p.options.force) {
+				var logout = _this.services[p.name].logout;
+				if (logout) {
+					// Convert logout to URL string,
+					// If no string is returned, then this function will handle the logout async style
+					if (typeof (logout) === 'function') {
+						logout = logout(callback, p);
+					}
+
+					// If logout is a string then assume URL and open in iframe.
+					if (typeof (logout) === 'string') {
+						utils.iframe(logout);
+						_opts.force = null;
+						_opts.message = 'Logout success on providers site was indeterminate';
+					}
+					else if (logout === undefined) {
+						// The callback function will handle the response.
+						return promise.proxy;
+					}
+				}
+			}
+
+			// Remove local credentials
+			callback(_opts);
+		}
+		else {
+			promise.reject(error('invalid_session', 'There was no session to remove'));
+		}
+
+		return promise.proxy;
+	},
+
+	// Returns all the sessions that are subscribed too
+	// @param string optional, name of the service to get information about.
+	getAuthResponse: function(service) {
+
+		// If the service doesn't exist
+		service = service || this.settings.default_service;
+
+		if (!service || !(service in this.services)) {
+			return null;
+		}
+
+		return this.utils.store(service) || null;
+	},
+
+	// Events: placeholder for the events
+	events: {}
+});
+
+// Core utilities
+hello.utils.extend(hello.utils, {
+
+	// Error
+	error: function(code, message) {
+		return {
+			error: {
+				code: code,
+				message: message
+			}
+		};
+	},
+
+	// Append the querystring to a url
+	// @param string url
+	// @param object parameters
+	qs: function(url, params, formatFunction) {
+
+		if (params) {
+
+			// Set default formatting function
+			formatFunction = formatFunction || encodeURIComponent;
+
+			// Override the items in the URL which already exist
+			for (var x in params) {
+				var str = '([\\?\\&])' + x + '=[^\\&]*';
+				var reg = new RegExp(str);
+				if (url.match(reg)) {
+					url = url.replace(reg, '$1' + x + '=' + formatFunction(params[x]));
+					delete params[x];
+				}
+			}
+		}
+
+		if (!this.isEmpty(params)) {
+			return url + (url.indexOf('?') > -1 ? '&' : '?') + this.param(params, formatFunction);
+		}
+
+		return url;
+	},
+
+	// Param
+	// Explode/encode the parameters of an URL string/object
+	// @param string s, string to decode
+	param: function(s, formatFunction) {
+		var b;
+		var a = {};
+		var m;
+
+		if (typeof (s) === 'string') {
+
+			formatFunction = formatFunction || decodeURIComponent;
+
+			m = s.replace(/^[\#\?]/, '').match(/([^=\/\&]+)=([^\&]+)/g);
+			if (m) {
+				for (var i = 0; i < m.length; i++) {
+					b = m[i].match(/([^=]+)=(.*)/);
+					a[b[1]] = formatFunction(b[2]);
+				}
+			}
+
+			return a;
+		}
+		else {
+
+			formatFunction = formatFunction || encodeURIComponent;
+
+			var o = s;
+
+			a = [];
+
+			for (var x in o) {if (o.hasOwnProperty(x)) {
+				if (o.hasOwnProperty(x)) {
+					a.push([x, o[x] === '?' ? '?' : formatFunction(o[x])].join('='));
+				}
+			}}
+
+			return a.join('&');
+		}
+	},
+
+	// Local storage facade
+	store: (function() {
+
+		var a = ['localStorage', 'sessionStorage'];
+		var i = -1;
+		var prefix = 'test';
+
+		// Set LocalStorage
+		var localStorage;
+
+		while (a[++i]) {
+			try {
+				// In Chrome with cookies blocked, calling localStorage throws an error
+				localStorage = window[a[i]];
+				localStorage.setItem(prefix + i, i);
+				localStorage.removeItem(prefix + i);
+				break;
+			}
+			catch (e) {
+				localStorage = null;
+			}
+		}
+
+		if (!localStorage) {
+
+			var cache = null;
+
+			localStorage = {
+				getItem: function(prop) {
+					prop = prop + '=';
+					var m = document.cookie.split(';');
+					for (var i = 0; i < m.length; i++) {
+						var _m = m[i].replace(/(^\s+|\s+$)/, '');
+						if (_m && _m.indexOf(prop) === 0) {
+							return _m.substr(prop.length);
+						}
+					}
+
+					return cache;
+				},
+
+				setItem: function(prop, value) {
+					cache = value;
+					document.cookie = prop + '=' + value;
+				}
+			};
+
+			// Fill the cache up
+			cache = localStorage.getItem('hello');
+		}
+
+		function get() {
+			var json = {};
+			try {
+				json = JSON.parse(localStorage.getItem('hello')) || {};
+			}
+			catch (e) {}
+
+			return json;
+		}
+
+		function set(json) {
+			localStorage.setItem('hello', JSON.stringify(json));
+		}
+
+		// Check if the browser support local storage
+		return function(name, value, days) {
+
+			// Local storage
+			var json = get();
+
+			if (name && value === undefined) {
+				return json[name] || null;
+			}
+			else if (name && value === null) {
+				try {
+					delete json[name];
+				}
+				catch (e) {
+					json[name] = null;
+				}
+			}
+			else if (name) {
+				json[name] = value;
+			}
+			else {
+				return json;
+			}
+
+			set(json);
+
+			return json || null;
+		};
+
+	})(),
+
+	// Create and Append new DOM elements
+	// @param node string
+	// @param attr object literal
+	// @param dom/string
+	append: function(node, attr, target) {
+
+		var n = typeof (node) === 'string' ? document.createElement(node) : node;
+
+		if (typeof (attr) === 'object') {
+			if ('tagName' in attr) {
+				target = attr;
+			}
+			else {
+				for (var x in attr) {if (attr.hasOwnProperty(x)) {
+					if (typeof (attr[x]) === 'object') {
+						for (var y in attr[x]) {if (attr[x].hasOwnProperty(y)) {
+							n[x][y] = attr[x][y];
+						}}
+					}
+					else if (x === 'html') {
+						n.innerHTML = attr[x];
+					}
+
+					// IE doesn't like us setting methods with setAttribute
+					else if (!/^on/.test(x)) {
+						n.setAttribute(x, attr[x]);
+					}
+					else {
+						n[x] = attr[x];
+					}
+				}}
+			}
+		}
+
+		if (target === 'body') {
+			(function self() {
+				if (document.body) {
+					document.body.appendChild(n);
+				}
+				else {
+					setTimeout(self, 16);
+				}
+			})();
+		}
+		else if (typeof (target) === 'object') {
+			target.appendChild(n);
+		}
+		else if (typeof (target) === 'string') {
+			document.getElementsByTagName(target)[0].appendChild(n);
+		}
+
+		return n;
+	},
+
+	// An easy way to create a hidden iframe
+	// @param string src
+	iframe: function(src) {
+		this.append('iframe', {src: src, style: {position:'absolute', left: '-1000px', bottom: 0, height: '1px', width: '1px'}}, 'body');
+	},
+
+	// Recursive merge two objects into one, second parameter overides the first
+	// @param a array
+	merge: function(/* Args: a, b, c, .. n */) {
+		var args = Array.prototype.slice.call(arguments);
+		args.unshift({});
+		return this.extend.apply(null, args);
+	},
+
+	// Makes it easier to assign parameters, where some are optional
+	// @param o object
+	// @param a arguments
+	args: function(o, args) {
+
+		var p = {};
+		var i = 0;
+		var t = null;
+		var x = null;
+
+		// 'x' is the first key in the list of object parameters
+		for (x in o) {if (o.hasOwnProperty(x)) {
+			break;
+		}}
+
+		// Passing in hash object of arguments?
+		// Where the first argument can't be an object
+		if ((args.length === 1) && (typeof (args[0]) === 'object') && o[x] != 'o!') {
+
+			// Could this object still belong to a property?
+			// Check the object keys if they match any of the property keys
+			for (x in args[0]) {if (o.hasOwnProperty(x)) {
+				// Does this key exist in the property list?
+				if (x in o) {
+					// Yes this key does exist so its most likely this function has been invoked with an object parameter
+					// Return first argument as the hash of all arguments
+					return args[0];
+				}
+			}}
+		}
+
+		// Else loop through and account for the missing ones.
+		for (x in o) {if (o.hasOwnProperty(x)) {
+
+			t = typeof (args[i]);
+
+			if ((typeof (o[x]) === 'function' && o[x].test(args[i])) || (typeof (o[x]) === 'string' && (
+			(o[x].indexOf('s') > -1 && t === 'string') ||
+			(o[x].indexOf('o') > -1 && t === 'object') ||
+			(o[x].indexOf('i') > -1 && t === 'number') ||
+			(o[x].indexOf('a') > -1 && t === 'object') ||
+			(o[x].indexOf('f') > -1 && t === 'function')
+			))
+			) {
+				p[x] = args[i++];
+			}
+
+			else if (typeof (o[x]) === 'string' && o[x].indexOf('!') > -1) {
+				return false;
+			}
+		}}
+
+		return p;
+	},
+
+	// Returns a URL instance
+	url: function(path) {
+
+		// If the path is empty
+		if (!path) {
+			return window.location;
+		}
+
+		// Chrome and FireFox support new URL() to extract URL objects
+		else if (window.URL && URL instanceof Function && URL.length !== 0) {
+			return new URL(path, window.location);
+		}
+
+		// Ugly shim, it works!
+		else {
+			var a = document.createElement('a');
+			a.href = path;
+			return a.cloneNode(false);
+		}
+	},
+
+	diff: function(a, b) {
+		return b.filter(function(item) {
+			return a.indexOf(item) === -1;
+		});
+	},
+
+	// Get the different hash of properties unique to `a`, and not in `b`
+	diffKey: function(a, b) {
+		if (a || !b) {
+			var r = {};
+			for (var x in a) {
+				// Does the property not exist?
+				if (!(x in b)) {
+					r[x] = a[x];
+				}
+			}
+
+			return r;
+		}
+
+		return a;
+	},
+
+	// Unique
+	// Remove duplicate and null values from an array
+	// @param a array
+	unique: function(a) {
+		if (!Array.isArray(a)) { return []; }
+
+		return a.filter(function(item, index) {
+			// Is this the first location of item
+			return a.indexOf(item) === index;
+		});
+	},
+
+	isEmpty: function(obj) {
+
+		// Scalar
+		if (!obj)
+			return true;
+
+		// Array
+		if (Array.isArray(obj)) {
+			return !obj.length;
+		}
+		else if (typeof (obj) === 'object') {
+			// Object
+			for (var key in obj) {
+				if (obj.hasOwnProperty(key)) {
+					return false;
+				}
+			}
+		}
+
+		return true;
+	},
+
+	//jscs:disable
+
+	/*!
+	 **  Thenable -- Embeddable Minimum Strictly-Compliant Promises/A+ 1.1.1 Thenable
+	 **  Copyright (c) 2013-2014 Ralf S. Engelschall <http://engelschall.com>
+	 **  Licensed under The MIT License <http://opensource.org/licenses/MIT>
+	 **  Source-Code distributed on <http://github.com/rse/thenable>
+	 */
+	Promise: (function(){
+		/*  promise states [Promises/A+ 2.1]  */
+		var STATE_PENDING   = 0;                                         /*  [Promises/A+ 2.1.1]  */
+		var STATE_FULFILLED = 1;                                         /*  [Promises/A+ 2.1.2]  */
+		var STATE_REJECTED  = 2;                                         /*  [Promises/A+ 2.1.3]  */
+
+		/*  promise object constructor  */
+		var api = function (executor) {
+			/*  optionally support non-constructor/plain-function call  */
+			if (!(this instanceof api))
+				return new api(executor);
+
+			/*  initialize object  */
+			this.id           = "Thenable/1.0.6";
+			this.state        = STATE_PENDING; /*  initial state  */
+			this.fulfillValue = undefined;     /*  initial value  */     /*  [Promises/A+ 1.3, 2.1.2.2]  */
+			this.rejectReason = undefined;     /*  initial reason */     /*  [Promises/A+ 1.5, 2.1.3.2]  */
+			this.onFulfilled  = [];            /*  initial handlers  */
+			this.onRejected   = [];            /*  initial handlers  */
+
+			/*  provide optional information-hiding proxy  */
+			this.proxy = {
+				then: this.then.bind(this)
+			};
+
+			/*  support optional executor function  */
+			if (typeof executor === "function")
+				executor.call(this, this.fulfill.bind(this), this.reject.bind(this));
+		};
+
+		/*  promise API methods  */
+		api.prototype = {
+			/*  promise resolving methods  */
+			fulfill: function (value) { return deliver(this, STATE_FULFILLED, "fulfillValue", value); },
+			reject:  function (value) { return deliver(this, STATE_REJECTED,  "rejectReason", value); },
+
+			/*  "The then Method" [Promises/A+ 1.1, 1.2, 2.2]  */
+			then: function (onFulfilled, onRejected) {
+				var curr = this;
+				var next = new api();                                    /*  [Promises/A+ 2.2.7]  */
+				curr.onFulfilled.push(
+					resolver(onFulfilled, next, "fulfill"));             /*  [Promises/A+ 2.2.2/2.2.6]  */
+				curr.onRejected.push(
+					resolver(onRejected,  next, "reject" ));             /*  [Promises/A+ 2.2.3/2.2.6]  */
+				execute(curr);
+				return next.proxy;                                       /*  [Promises/A+ 2.2.7, 3.3]  */
+			}
+		};
+
+		/*  deliver an action  */
+		var deliver = function (curr, state, name, value) {
+			if (curr.state === STATE_PENDING) {
+				curr.state = state;                                      /*  [Promises/A+ 2.1.2.1, 2.1.3.1]  */
+				curr[name] = value;                                      /*  [Promises/A+ 2.1.2.2, 2.1.3.2]  */
+				execute(curr);
+			}
+			return curr;
+		};
+
+		/*  execute all handlers  */
+		var execute = function (curr) {
+			if (curr.state === STATE_FULFILLED)
+				execute_handlers(curr, "onFulfilled", curr.fulfillValue);
+			else if (curr.state === STATE_REJECTED)
+				execute_handlers(curr, "onRejected",  curr.rejectReason);
+		};
+
+		/*  execute particular set of handlers  */
+		var execute_handlers = function (curr, name, value) {
+			/* global process: true */
+			/* global setImmediate: true */
+			/* global setTimeout: true */
+
+			/*  short-circuit processing  */
+			if (curr[name].length === 0)
+				return;
+
+			/*  iterate over all handlers, exactly once  */
+			var handlers = curr[name];
+			curr[name] = [];                                             /*  [Promises/A+ 2.2.2.3, 2.2.3.3]  */
+			var func = function () {
+				for (var i = 0; i < handlers.length; i++)
+					handlers[i](value);                                  /*  [Promises/A+ 2.2.5]  */
+			};
+
+			/*  execute procedure asynchronously  */                     /*  [Promises/A+ 2.2.4, 3.1]  */
+			if (typeof process === "object" && typeof process.nextTick === "function")
+				process.nextTick(func);
+			else if (typeof setImmediate === "function")
+				setImmediate(func);
+			else
+				setTimeout(func, 0);
+		};
+
+		/*  generate a resolver function  */
+		var resolver = function (cb, next, method) {
+			return function (value) {
+				if (typeof cb !== "function")                            /*  [Promises/A+ 2.2.1, 2.2.7.3, 2.2.7.4]  */
+					next[method].call(next, value);                      /*  [Promises/A+ 2.2.7.3, 2.2.7.4]  */
+				else {
+					var result;
+					try { result = cb(value); }                          /*  [Promises/A+ 2.2.2.1, 2.2.3.1, 2.2.5, 3.2]  */
+					catch (e) {
+						next.reject(e);                                  /*  [Promises/A+ 2.2.7.2]  */
+						return;
+					}
+					resolve(next, result);                               /*  [Promises/A+ 2.2.7.1]  */
+				}
+			};
+		};
+
+		/*  "Promise Resolution Procedure"  */                           /*  [Promises/A+ 2.3]  */
+		var resolve = function (promise, x) {
+			/*  sanity check arguments  */                               /*  [Promises/A+ 2.3.1]  */
+			if (promise === x || promise.proxy === x) {
+				promise.reject(new TypeError("cannot resolve promise with itself"));
+				return;
+			}
+
+			/*  surgically check for a "then" method
+				(mainly to just call the "getter" of "then" only once)  */
+			var then;
+			if ((typeof x === "object" && x !== null) || typeof x === "function") {
+				try { then = x.then; }                                   /*  [Promises/A+ 2.3.3.1, 3.5]  */
+				catch (e) {
+					promise.reject(e);                                   /*  [Promises/A+ 2.3.3.2]  */
+					return;
+				}
+			}
+
+			/*  handle own Thenables    [Promises/A+ 2.3.2]
+				and similar "thenables" [Promises/A+ 2.3.3]  */
+			if (typeof then === "function") {
+				var resolved = false;
+				try {
+					/*  call retrieved "then" method */                  /*  [Promises/A+ 2.3.3.3]  */
+					then.call(x,
+						/*  resolvePromise  */                           /*  [Promises/A+ 2.3.3.3.1]  */
+						function (y) {
+							if (resolved) return; resolved = true;       /*  [Promises/A+ 2.3.3.3.3]  */
+							if (y === x)                                 /*  [Promises/A+ 3.6]  */
+								promise.reject(new TypeError("circular thenable chain"));
+							else
+								resolve(promise, y);
+						},
+
+						/*  rejectPromise  */                            /*  [Promises/A+ 2.3.3.3.2]  */
+						function (r) {
+							if (resolved) return; resolved = true;       /*  [Promises/A+ 2.3.3.3.3]  */
+							promise.reject(r);
+						}
+					);
+				}
+				catch (e) {
+					if (!resolved)                                       /*  [Promises/A+ 2.3.3.3.3]  */
+						promise.reject(e);                               /*  [Promises/A+ 2.3.3.3.4]  */
+				}
+				return;
+			}
+
+			/*  handle other values  */
+			promise.fulfill(x);                                          /*  [Promises/A+ 2.3.4, 2.3.3.4]  */
+		};
+
+		/*  export API  */
+		return api;
+	})(),
+
+	//jscs:enable
+
+	// Event
+	// A contructor superclass for adding event menthods, on, off, emit.
+	Event: function() {
+
+		var separator = /[\s\,]+/;
+
+		// If this doesn't support getPrototype then we can't get prototype.events of the parent
+		// So lets get the current instance events, and add those to a parent property
+		this.parent = {
+			events: this.events,
+			findEvents: this.findEvents,
+			parent: this.parent,
+			utils: this.utils
+		};
+
+		this.events = {};
+
+		// On, subscribe to events
+		// @param evt   string
+		// @param callback  function
+		this.on = function(evt, callback) {
+
+			if (callback && typeof (callback) === 'function') {
+				var a = evt.split(separator);
+				for (var i = 0; i < a.length; i++) {
+
+					// Has this event already been fired on this instance?
+					this.events[a[i]] = [callback].concat(this.events[a[i]] || []);
+				}
+			}
+
+			return this;
+		};
+
+		// Off, unsubscribe to events
+		// @param evt   string
+		// @param callback  function
+		this.off = function(evt, callback) {
+
+			this.findEvents(evt, function(name, index) {
+				if (!callback || this.events[name][index] === callback) {
+					this.events[name][index] = null;
+				}
+			});
+
+			return this;
+		};
+
+		// Emit
+		// Triggers any subscribed events
+		this.emit = function(evt /*, data, ... */) {
+
+			// Get arguments as an Array, knock off the first one
+			var args = Array.prototype.slice.call(arguments, 1);
+			args.push(evt);
+
+			// Handler
+			var handler = function(name, index) {
+
+				// Replace the last property with the event name
+				args[args.length - 1] = (name === '*' ? evt : name);
+
+				// Trigger
+				this.events[name][index].apply(this, args);
+			};
+
+			// Find the callbacks which match the condition and call
+			var _this = this;
+			while (_this && _this.findEvents) {
+
+				// Find events which match
+				_this.findEvents(evt + ',*', handler);
+				_this = _this.parent;
+			}
+
+			return this;
+		};
+
+		//
+		// Easy functions
+		this.emitAfter = function() {
+			var _this = this;
+			var args = arguments;
+			setTimeout(function() {
+				_this.emit.apply(_this, args);
+			}, 0);
+
+			return this;
+		};
+
+		this.findEvents = function(evt, callback) {
+
+			var a = evt.split(separator);
+
+			for (var name in this.events) {if (this.events.hasOwnProperty(name)) {
+
+				if (a.indexOf(name) > -1) {
+
+					for (var i = 0; i < this.events[name].length; i++) {
+
+						// Does the event handler exist?
+						if (this.events[name][i]) {
+							// Emit on the local instance of this
+							callback.call(this, name, i);
+						}
+					}
+				}
+			}}
+		};
+
+		return this;
+	},
+
+	// Global Events
+	// Attach the callback to the window object
+	// Return its unique reference
+	globalEvent: function(callback, guid) {
+		// If the guid has not been supplied then create a new one.
+		guid = guid || '_hellojs_' + parseInt(Math.random() * 1e12, 10).toString(36);
+
+		// Define the callback function
+		window[guid] = function() {
+			// Trigger the callback
+			try {
+				if (callback.apply(this, arguments)) {
+					delete window[guid];
+				}
+			}
+			catch (e) {
+				console.error(e);
+			}
+		};
+
+		return guid;
+	},
+
+	// Trigger a clientside popup
+	// This has been augmented to support PhoneGap
+	popup: function(url, redirectUri, options) {
+
+		var documentElement = document.documentElement;
+
+		// Multi Screen Popup Positioning (http://stackoverflow.com/a/16861050)
+		// Credit: http://www.xtf.dk/2011/08/center-new-popup-window-even-on.html
+		// Fixes dual-screen position                         Most browsers      Firefox
+
+		if (options.height) {
+			var dualScreenTop = window.screenTop !== undefined ? window.screenTop : screen.top;
+			var height = screen.height || window.innerHeight || documentElement.clientHeight;
+			options.top = parseInt((height - options.height) / 2, 10) + dualScreenTop;
+		}
+
+		if (options.width) {
+			var dualScreenLeft = window.screenLeft !== undefined ? window.screenLeft : screen.left;
+			var width = screen.width || window.innerWidth || documentElement.clientWidth;
+			options.left = parseInt((width - options.width) / 2, 10) + dualScreenLeft;
+		}
+
+		// Convert options into an array
+		var optionsArray = [];
+		Object.keys(options).forEach(function(name) {
+			var value = options[name];
+			optionsArray.push(name + (value !== null ? '=' + value : ''));
+		});
+
+		// Create a function for reopening the popup, and assigning events to the new popup object
+		// This is a fix whereby triggering the
+		var open = function(url) {
+
+			// Trigger callback
+			var popup = window.open(
+				url,
+				'_blank',
+				optionsArray.join(',')
+			);
+
+			// PhoneGap support
+			// Add an event listener to listen to the change in the popup windows URL
+			// This must appear before popup.focus();
+			try {
+				if (popup && popup.addEventListener) {
+
+					// Get the origin of the redirect URI
+
+					var a = hello.utils.url(redirectUri);
+					var redirectUriOrigin = a.origin || (a.protocol + '//' + a.hostname);
+
+					// Listen to changes in the InAppBrowser window
+
+					popup.addEventListener('loadstart', function(e) {
+
+						var url = e.url;
+
+						// Is this the path, as given by the redirectUri?
+						// Check the new URL agains the redirectUriOrigin.
+						// According to #63 a user could click 'cancel' in some dialog boxes ....
+						// The popup redirects to another page with the same origin, yet we still wish it to close.
+
+						if (url.indexOf(redirectUriOrigin) !== 0) {
+							return;
+						}
+
+						// Split appart the URL
+						var a = hello.utils.url(url);
+
+						// We dont have window operations on the popup so lets create some
+						// The location can be augmented in to a location object like so...
+
+						var _popup = {
+							location: {
+								// Change the location of the popup
+								assign: function(location) {
+
+									// Unfourtunatly an app is may not change the location of a InAppBrowser window.
+									// So to shim this, just open a new one.
+
+									popup.addEventListener('exit', function() {
+
+										// For some reason its failing to close the window if a new window opens too soon.
+
+										setTimeout(function() {
+											open(location);
+										}, 1000);
+									});
+								},
+
+								search: a.search,
+								hash: a.hash,
+								href: a.href
+							},
+							close: function() {
+								if (popup.close) {
+									popup.close();
+								}
+							}
+						};
+
+						// Then this URL contains information which HelloJS must process
+						// URL string
+						// Window - any action such as window relocation goes here
+						// Opener - the parent window which opened this, aka this script
+
+						hello.utils.responseHandler(_popup, window);
+
+						// Always close the popup regardless of whether the hello.utils.responseHandler detects a state parameter or not in the querystring.
+						// Such situations might arise such as those in #63
+
+						_popup.close();
+
+					});
+				}
+			}
+			catch (e) {}
+
+			if (popup && popup.focus) {
+				popup.focus();
+			}
+
+			return popup;
+		};
+
+		// Call the open() function with the initial path
+		//
+		// OAuth redirect, fixes URI fragments from being lost in Safari
+		// (URI Fragments within 302 Location URI are lost over HTTPS)
+		// Loading the redirect.html before triggering the OAuth Flow seems to fix it.
+		//
+		// Firefox  decodes URL fragments when calling location.hash.
+		//  - This is bad if the value contains break points which are escaped
+		//  - Hence the url must be encoded twice as it contains breakpoints.
+		if (navigator.userAgent.indexOf('Safari') !== -1 && navigator.userAgent.indexOf('Chrome') === -1) {
+			url = redirectUri + '#oauth_redirect=' + encodeURIComponent(encodeURIComponent(url));
+		}
+
+		return open(url);
+	},
+
+	// OAuth and API response handler
+	responseHandler: function(window, parent) {
+
+		var _this = this;
+		var p;
+		var location = window.location;
+
+		// Is this an auth relay message which needs to call the proxy?
+		p = _this.param(location.search);
+
+		// OAuth2 or OAuth1 server response?
+		if (p && p.state && (p.code || p.oauth_token)) {
+
+			var state = JSON.parse(p.state);
+
+			// Add this path as the redirect_uri
+			p.redirect_uri = state.redirect_uri || location.href.replace(/[\?\#].*$/, '');
+
+			// Redirect to the host
+			var path = state.oauth_proxy + '?' + _this.param(p);
+
+			location.assign(path);
+
+			return;
+		}
+
+		// Save session, from redirected authentication
+		// #access_token has come in?
+		//
+		// FACEBOOK is returning auth errors within as a query_string... thats a stickler for consistency.
+		// SoundCloud is the state in the querystring and the token in the hashtag, so we'll mix the two together
+
+		p = _this.merge(_this.param(location.search || ''), _this.param(location.hash || ''));
+
+		// If p.state
+		if (p && 'state' in p) {
+
+			// Remove any addition information
+			// E.g. p.state = 'facebook.page';
+			try {
+				var a = JSON.parse(p.state);
+				_this.extend(p, a);
+			}
+			catch (e) {
+				console.error('Could not decode state parameter');
+			}
+
+			// Access_token?
+			if (('access_token' in p && p.access_token) && p.network) {
+
+				if (!p.expires_in || parseInt(p.expires_in, 10) === 0) {
+					// If p.expires_in is unset, set to 0
+					p.expires_in = 0;
+				}
+
+				p.expires_in = parseInt(p.expires_in, 10);
+				p.expires = ((new Date()).getTime() / 1e3) + (p.expires_in || (60 * 60 * 24 * 365));
+
+				// Lets use the "state" to assign it to one of our networks
+				authCallback(p, window, parent);
+			}
+
+			// Error=?
+			// &error_description=?
+			// &state=?
+			else if (('error' in p && p.error) && p.network) {
+
+				p.error = {
+					code: p.error,
+					message: p.error_message || p.error_description
+				};
+
+				// Let the state handler handle it
+				authCallback(p, window, parent);
+			}
+
+			// API call, or a cancelled login
+			// Result is serialized JSON string
+			else if (p.callback && p.callback in parent) {
+
+				// Trigger a function in the parent
+				var res = 'result' in p && p.result ? JSON.parse(p.result) : false;
+
+				// Trigger the callback on the parent
+				parent[p.callback](res);
+				closeWindow();
+			}
+
+			// If this page is still open
+			if (p.page_uri) {
+				location.assign(p.page_uri);
+			}
+		}
+
+		// OAuth redirect, fixes URI fragments from being lost in Safari
+		// (URI Fragments within 302 Location URI are lost over HTTPS)
+		// Loading the redirect.html before triggering the OAuth Flow seems to fix it.
+		else if ('oauth_redirect' in p) {
+
+			location.assign(decodeURIComponent(p.oauth_redirect));
+			return;
+		}
+
+		// Trigger a callback to authenticate
+		function authCallback(obj, window, parent) {
+
+			var cb = obj.callback;
+			var network = obj.network;
+
+			// Trigger the callback on the parent
+			_this.store(network, obj);
+
+			// If this is a page request it has no parent or opener window to handle callbacks
+			if (('display' in obj) && obj.display === 'page') {
+				return;
+			}
+
+			// Remove from session object
+			if (parent && cb && cb in parent) {
+
+				try {
+					delete obj.callback;
+				}
+				catch (e) {}
+
+				// Update store
+				_this.store(network, obj);
+
+				// Call the globalEvent function on the parent
+				// It's safer to pass back a string to the parent,
+				// Rather than an object/array (better for IE8)
+				var str = JSON.stringify(obj);
+
+				try {
+					parent[cb](str);
+				}
+				catch (e) {
+					// Error thrown whilst executing parent callback
+				}
+			}
+
+			closeWindow();
+		}
+
+		function closeWindow() {
+
+			// Close this current window
+			try {
+				window.close();
+			}
+			catch (e) {}
+
+			// IOS bug wont let us close a popup if still loading
+			if (window.addEventListener) {
+				window.addEventListener('load', function() {
+					window.close();
+				});
+			}
+		}
+	}
+});
+
+// Events
+
+// Extend the hello object with its own event instance
+hello.utils.Event.call(hello);
+
+/////////////////////////////////////
+//
+// Save any access token that is in the current page URL
+// Handle any response solicited through iframe hash tag following an API request
+//
+/////////////////////////////////////
+
+hello.utils.responseHandler(window, window.opener || window.parent);
+
+///////////////////////////////////
+// Monitoring session state
+// Check for session changes
+///////////////////////////////////
+
+(function(hello) {
+
+	// Monitor for a change in state and fire
+	var oldSessions = {};
+
+	// Hash of expired tokens
+	var expired = {};
+
+	// Listen to other triggers to Auth events, use these to update this
+	hello.on('auth.login, auth.logout', function(auth) {
+		if (auth && typeof (auth) === 'object' && auth.network) {
+			oldSessions[auth.network] = hello.utils.store(auth.network) || {};
+		}
+	});
+
+	(function self() {
+
+		var CURRENT_TIME = ((new Date()).getTime() / 1e3);
+		var emit = function(eventName) {
+			hello.emit('auth.' + eventName, {
+				network: name,
+				authResponse: session
+			});
+		};
+
+		// Loop through the services
+		for (var name in hello.services) {if (hello.services.hasOwnProperty(name)) {
+
+			if (!hello.services[name].id) {
+				// We haven't attached an ID so dont listen.
+				continue;
+			}
+
+			// Get session
+			var session = hello.utils.store(name) || {};
+			var provider = hello.services[name];
+			var oldSess = oldSessions[name] || {};
+
+			// Listen for globalEvents that did not get triggered from the child
+			if (session && 'callback' in session) {
+
+				// To do remove from session object...
+				var cb = session.callback;
+				try {
+					delete session.callback;
+				}
+				catch (e) {}
+
+				// Update store
+				// Removing the callback
+				hello.utils.store(name, session);
+
+				// Emit global events
+				try {
+					window[cb](session);
+				}
+				catch (e) {}
+			}
+
+			// Refresh token
+			if (session && ('expires' in session) && session.expires < CURRENT_TIME) {
+
+				// If auto refresh is possible
+				// Either the browser supports
+				var refresh = provider.refresh || session.refresh_token;
+
+				// Has the refresh been run recently?
+				if (refresh && (!(name in expired) || expired[name] < CURRENT_TIME)) {
+					// Try to resignin
+					hello.emit('notice', name + ' has expired trying to resignin');
+					hello.login(name, {display: 'none', force: false});
+
+					// Update expired, every 10 minutes
+					expired[name] = CURRENT_TIME + 600;
+				}
+
+				// Does this provider not support refresh
+				else if (!refresh && !(name in expired)) {
+					// Label the event
+					emit('expired');
+					expired[name] = true;
+				}
+
+				// If session has expired then we dont want to store its value until it can be established that its been updated
+				continue;
+			}
+
+			// Has session changed?
+			else if (oldSess.access_token === session.access_token &&
+			oldSess.expires === session.expires) {
+				continue;
+			}
+
+			// Access_token has been removed
+			else if (!session.access_token && oldSess.access_token) {
+				emit('logout');
+			}
+
+			// Access_token has been created
+			else if (session.access_token && !oldSess.access_token) {
+				emit('login');
+			}
+
+			// Access_token has been updated
+			else if (session.expires !== oldSess.expires) {
+				emit('update');
+			}
+
+			// Updated stored session
+			oldSessions[name] = session;
+
+			// Remove the expired flags
+			if (name in expired) {
+				delete expired[name];
+			}
+		}}
+
+		// Check error events
+		setTimeout(self, 1000);
+	})();
+
+})(hello);
+
+// EOF CORE lib
+//////////////////////////////////
+
+/////////////////////////////////////////
+// API
+// @param path    string
+// @param query   object (optional)
+// @param method  string (optional)
+// @param data    object (optional)
+// @param timeout integer (optional)
+// @param callback  function (optional)
+
+hello.api = function() {
+
+	// Shorthand
+	var _this = this;
+	var utils = _this.utils;
+	var error = utils.error;
+
+	// Construct a new Promise object
+	var promise = utils.Promise();
+
+	// Arguments
+	var p = utils.args({path: 's!', query: 'o', method: 's', data: 'o', timeout: 'i', callback: 'f'}, arguments);
+
+	// Method
+	p.method = (p.method || 'get').toLowerCase();
+
+	// Headers
+	p.headers = p.headers || {};
+
+	// Query
+	p.query = p.query || {};
+
+	// If get, put all parameters into query
+	if (p.method === 'get' || p.method === 'delete') {
+		utils.extend(p.query, p.data);
+		p.data = {};
+	}
+
+	var data = p.data = p.data || {};
+
+	// Completed event callback
+	promise.then(p.callback, p.callback);
+
+	// Remove the network from path, e.g. facebook:/me/friends
+	// Results in { network : facebook, path : me/friends }
+	if (!p.path) {
+		return promise.reject(error('invalid_path', 'Missing the path parameter from the request'));
+	}
+
+	p.path = p.path.replace(/^\/+/, '');
+	var a = (p.path.split(/[\/\:]/, 2) || [])[0].toLowerCase();
+
+	if (a in _this.services) {
+		p.network = a;
+		var reg = new RegExp('^' + a + ':?\/?');
+		p.path = p.path.replace(reg, '');
+	}
+
+	// Network & Provider
+	// Define the network that this request is made for
+	p.network = _this.settings.default_service = p.network || _this.settings.default_service;
+	var o = _this.services[p.network];
+
+	// INVALID
+	// Is there no service by the given network name?
+	if (!o) {
+		return promise.reject(error('invalid_network', 'Could not match the service requested: ' + p.network));
+	}
+
+	// PATH
+	// As long as the path isn't flagged as unavaiable, e.g. path == false
+
+	if (!(!(p.method in o) || !(p.path in o[p.method]) || o[p.method][p.path] !== false)) {
+		return promise.reject(error('invalid_path', 'The provided path is not available on the selected network'));
+	}
+
+	// PROXY
+	// OAuth1 calls always need a proxy
+
+	if (!p.oauth_proxy) {
+		p.oauth_proxy = _this.settings.oauth_proxy;
+	}
+
+	if (!('proxy' in p)) {
+		p.proxy = p.oauth_proxy && o.oauth && parseInt(o.oauth.version, 10) === 1;
+	}
+
+	// TIMEOUT
+	// Adopt timeout from global settings by default
+
+	if (!('timeout' in p)) {
+		p.timeout = _this.settings.timeout;
+	}
+
+	// Format response
+	// Whether to run the raw response through post processing.
+	if (!('formatResponse' in p)) {
+		p.formatResponse = true;
+	}
+
+	// Get the current session
+	// Append the access_token to the query
+	p.authResponse = _this.getAuthResponse(p.network);
+	if (p.authResponse && p.authResponse.access_token) {
+		p.query.access_token = p.authResponse.access_token;
+	}
+
+	var url = p.path;
+	var m;
+
+	// Store the query as options
+	// This is used to populate the request object before the data is augmented by the prewrap handlers.
+	p.options = utils.clone(p.query);
+
+	// Clone the data object
+	// Prevent this script overwriting the data of the incoming object.
+	// Ensure that everytime we run an iteration the callbacks haven't removed some data
+	p.data = utils.clone(data);
+
+	// URL Mapping
+	// Is there a map for the given URL?
+	var actions = o[{'delete': 'del'}[p.method] || p.method] || {};
+
+	// Extrapolate the QueryString
+	// Provide a clean path
+	// Move the querystring into the data
+	if (p.method === 'get') {
+
+		var query = url.split(/[\?#]/)[1];
+		if (query) {
+			utils.extend(p.query, utils.param(query));
+
+			// Remove the query part from the URL
+			url = url.replace(/\?.*?(#|$)/, '$1');
+		}
+	}
+
+	// Is the hash fragment defined
+	if ((m = url.match(/#(.+)/, ''))) {
+		url = url.split('#')[0];
+		p.path = m[1];
+	}
+	else if (url in actions) {
+		p.path = url;
+		url = actions[url];
+	}
+	else if ('default' in actions) {
+		url = actions['default'];
+	}
+
+	// Redirect Handler
+	// This defines for the Form+Iframe+Hash hack where to return the results too.
+	p.redirect_uri = _this.settings.redirect_uri;
+
+	// Define FormatHandler
+	// The request can be procesed in a multitude of ways
+	// Here's the options - depending on the browser and endpoint
+	p.xhr = o.xhr;
+	p.jsonp = o.jsonp;
+	p.form = o.form;
+
+	// Make request
+	if (typeof (url) === 'function') {
+		// Does self have its own callback?
+		url(p, getPath);
+	}
+	else {
+		// Else the URL is a string
+		getPath(url);
+	}
+
+	return promise.proxy;
+
+	// If url needs a base
+	// Wrap everything in
+	function getPath(url) {
+
+		// Format the string if it needs it
+		url = url.replace(/\@\{([a-z\_\-]+)(\|.*?)?\}/gi, function(m, key, defaults) {
+			var val = defaults ? defaults.replace(/^\|/, '') : '';
+			if (key in p.query) {
+				val = p.query[key];
+				delete p.query[key];
+			}
+			else if (p.data && key in p.data) {
+				val = p.data[key];
+				delete p.data[key];
+			}
+			else if (!defaults) {
+				promise.reject(error('missing_attribute', 'The attribute ' + key + ' is missing from the request'));
+			}
+
+			return val;
+		});
+
+		// Add base
+		if (!url.match(/^https?:\/\//)) {
+			url = o.base + url;
+		}
+
+		// Define the request URL
+		p.url = url;
+
+		// Make the HTTP request with the curated request object
+		// CALLBACK HANDLER
+		// @ response object
+		// @ statusCode integer if available
+		utils.request(p, function(r, headers) {
+
+			// Is this a raw response?
+			if (!p.formatResponse) {
+				// Bad request? error statusCode or otherwise contains an error response vis JSONP?
+				if (typeof headers === 'object' ? (headers.statusCode >= 400) : (typeof r === 'object' && 'error' in r)) {
+					promise.reject(r);
+				}
+				else {
+					promise.fulfill(r);
+				}
+
+				return;
+			}
+
+			// Should this be an object
+			if (r === true) {
+				r = {success:true};
+			}
+			else if (!r) {
+				r = {};
+			}
+
+			// The delete callback needs a better response
+			if (p.method === 'delete') {
+				r = (!r || utils.isEmpty(r)) ? {success:true} : r;
+			}
+
+			// FORMAT RESPONSE?
+			// Does self request have a corresponding formatter
+			if (o.wrap && ((p.path in o.wrap) || ('default' in o.wrap))) {
+				var wrap = (p.path in o.wrap ? p.path : 'default');
+				var time = (new Date()).getTime();
+
+				// FORMAT RESPONSE
+				var b = o.wrap[wrap](r, headers, p);
+
+				// Has the response been utterly overwritten?
+				// Typically self augments the existing object.. but for those rare occassions
+				if (b) {
+					r = b;
+				}
+			}
+
+			// Is there a next_page defined in the response?
+			if (r && 'paging' in r && r.paging.next) {
+
+				// Add the relative path if it is missing from the paging/next path
+				if (r.paging.next[0] === '?') {
+					r.paging.next = p.path + r.paging.next;
+				}
+
+				// The relative path has been defined, lets markup the handler in the HashFragment
+				else {
+					r.paging.next += '#' + p.path;
+				}
+			}
+
+			// Dispatch to listeners
+			// Emit events which pertain to the formatted response
+			if (!r || 'error' in r) {
+				promise.reject(r);
+			}
+			else {
+				promise.fulfill(r);
+			}
+		});
+	}
+};
+
+// API utilities
+hello.utils.extend(hello.utils, {
+
+	// Make an HTTP request
+	request: function(p, callback) {
+
+		var _this = this;
+		var error = _this.error;
+
+		// This has to go through a POST request
+		if (!_this.isEmpty(p.data) && !('FileList' in window) && _this.hasBinary(p.data)) {
+
+			// Disable XHR and JSONP
+			p.xhr = false;
+			p.jsonp = false;
+		}
+
+		// Check if the browser and service support CORS
+		var cors = this.request_cors(function() {
+			// If it does then run this...
+			return ((p.xhr === undefined) || (p.xhr && (typeof (p.xhr) !== 'function' || p.xhr(p, p.query))));
+		});
+
+		if (cors) {
+
+			formatUrl(p, function(url) {
+
+				var x = _this.xhr(p.method, url, p.headers, p.data, callback);
+				x.onprogress = p.onprogress || null;
+
+				// Windows Phone does not support xhr.upload, see #74
+				// Feature detect
+				if (x.upload && p.onuploadprogress) {
+					x.upload.onprogress = p.onuploadprogress;
+				}
+
+			});
+
+			return;
+		}
+
+		// Clone the query object
+		// Each request modifies the query object and needs to be tared after each one.
+		var _query = p.query;
+
+		p.query = _this.clone(p.query);
+
+		// Assign a new callbackID
+		p.callbackID = _this.globalEvent();
+
+		// JSONP
+		if (p.jsonp !== false) {
+
+			// Clone the query object
+			p.query.callback = p.callbackID;
+
+			// If the JSONP is a function then run it
+			if (typeof (p.jsonp) === 'function') {
+				p.jsonp(p, p.query);
+			}
+
+			// Lets use JSONP if the method is 'get'
+			if (p.method === 'get') {
+
+				formatUrl(p, function(url) {
+					_this.jsonp(url, callback, p.callbackID, p.timeout);
+				});
+
+				return;
+			}
+			else {
+				// It's not compatible reset query
+				p.query = _query;
+			}
+
+		}
+
+		// Otherwise we're on to the old school, iframe hacks and JSONP
+		if (p.form !== false) {
+
+			// Add some additional query parameters to the URL
+			// We're pretty stuffed if the endpoint doesn't like these
+			p.query.redirect_uri = p.redirect_uri;
+			p.query.state = JSON.stringify({callback:p.callbackID});
+
+			var opts;
+
+			if (typeof (p.form) === 'function') {
+
+				// Format the request
+				opts = p.form(p, p.query);
+			}
+
+			if (p.method === 'post' && opts !== false) {
+
+				formatUrl(p, function(url) {
+					_this.post(url, p.data, opts, callback, p.callbackID, p.timeout);
+				});
+
+				return;
+			}
+		}
+
+		// None of the methods were successful throw an error
+		callback(error('invalid_request', 'There was no mechanism for handling this request'));
+
+		return;
+
+		// Format URL
+		// Constructs the request URL, optionally wraps the URL through a call to a proxy server
+		// Returns the formatted URL
+		function formatUrl(p, callback) {
+
+			// Are we signing the request?
+			var sign;
+
+			// OAuth1
+			// Remove the token from the query before signing
+			if (p.authResponse && p.authResponse.oauth && parseInt(p.authResponse.oauth.version, 10) === 1) {
+
+				// OAUTH SIGNING PROXY
+				sign = p.query.access_token;
+
+				// Remove the access_token
+				delete p.query.access_token;
+
+				// Enfore use of Proxy
+				p.proxy = true;
+			}
+
+			// POST body to querystring
+			if (p.data && (p.method === 'get' || p.method === 'delete')) {
+				// Attach the p.data to the querystring.
+				_this.extend(p.query, p.data);
+				p.data = null;
+			}
+
+			// Construct the path
+			var path = _this.qs(p.url, p.query);
+
+			// Proxy the request through a server
+			// Used for signing OAuth1
+			// And circumventing services without Access-Control Headers
+			if (p.proxy) {
+				// Use the proxy as a path
+				path = _this.qs(p.oauth_proxy, {
+					path: path,
+					access_token: sign || '',
+
+					// This will prompt the request to be signed as though it is OAuth1
+					then: p.proxy_response_type || (p.method.toLowerCase() === 'get' ? 'redirect' : 'proxy'),
+					method: p.method.toLowerCase(),
+					suppress_response_codes: true
+				});
+			}
+
+			callback(path);
+		}
+	},
+
+	// Test whether the browser supports the CORS response
+	request_cors: function(callback) {
+		return 'withCredentials' in new XMLHttpRequest() && callback();
+	},
+
+	// Return the type of DOM object
+	domInstance: function(type, data) {
+		var test = 'HTML' + (type || '').replace(
+			/^[a-z]/,
+			function(m) {
+				return m.toUpperCase();
+			}
+
+		) + 'Element';
+
+		if (!data) {
+			return false;
+		}
+
+		if (window[test]) {
+			return data instanceof window[test];
+		}
+		else if (window.Element) {
+			return data instanceof window.Element && (!type || (data.tagName && data.tagName.toLowerCase() === type));
+		}
+		else {
+			return (!(data instanceof Object || data instanceof Array || data instanceof String || data instanceof Number) && data.tagName && data.tagName.toLowerCase() === type);
+		}
+	},
+
+	// Create a clone of an object
+	clone: function(obj) {
+		// Does not clone DOM elements, nor Binary data, e.g. Blobs, Filelists
+		if (obj === null || typeof (obj) !== 'object' || obj instanceof Date || 'nodeName' in obj || this.isBinary(obj)) {
+			return obj;
+		}
+
+		if (Array.isArray(obj)) {
+			// Clone each item in the array
+			return obj.map(this.clone.bind(this));
+		}
+
+		// But does clone everything else.
+		var clone = {};
+		for (var x in obj) {
+			clone[x] = this.clone(obj[x]);
+		}
+
+		return clone;
+	},
+
+	// XHR: uses CORS to make requests
+	xhr: function(method, url, headers, data, callback) {
+
+		var r = new XMLHttpRequest();
+		var error = this.error;
+
+		// Binary?
+		var binary = false;
+		if (method === 'blob') {
+			binary = method;
+			method = 'GET';
+		}
+
+		method = method.toUpperCase();
+
+		// Xhr.responseType 'json' is not supported in any of the vendors yet.
+		r.onload = function(e) {
+			var json = r.response;
+			try {
+				json = JSON.parse(r.responseText);
+			}
+			catch (_e) {
+				if (r.status === 401) {
+					json = error('access_denied', r.statusText);
+				}
+			}
+
+			var headers = headersToJSON(r.getAllResponseHeaders());
+			headers.statusCode = r.status;
+
+			callback(json || (method === 'GET' ? error('empty_response', 'Could not get resource') : {}), headers);
+		};
+
+		r.onerror = function(e) {
+			var json = r.responseText;
+			try {
+				json = JSON.parse(r.responseText);
+			}
+			catch (_e) {}
+
+			callback(json || error('access_denied', 'Could not get resource'));
+		};
+
+		var x;
+
+		// Should we add the query to the URL?
+		if (method === 'GET' || method === 'DELETE') {
+			data = null;
+		}
+		else if (data && typeof (data) !== 'string' && !(data instanceof FormData) && !(data instanceof File) && !(data instanceof Blob)) {
+			// Loop through and add formData
+			var f = new FormData();
+			for (x in data) if (data.hasOwnProperty(x)) {
+				if (data[x] instanceof HTMLInputElement) {
+					if ('files' in data[x] && data[x].files.length > 0) {
+						f.append(x, data[x].files[0]);
+					}
+				}
+				else if (data[x] instanceof Blob) {
+					f.append(x, data[x], data.name);
+				}
+				else {
+					f.append(x, data[x]);
+				}
+			}
+
+			data = f;
+		}
+
+		// Open the path, async
+		r.open(method, url, true);
+
+		if (binary) {
+			if ('responseType' in r) {
+				r.responseType = binary;
+			}
+			else {
+				r.overrideMimeType('text/plain; charset=x-user-defined');
+			}
+		}
+
+		// Set any bespoke headers
+		if (headers) {
+			for (x in headers) {
+				r.setRequestHeader(x, headers[x]);
+			}
+		}
+
+		r.send(data);
+
+		return r;
+
+		// Headers are returned as a string
+		function headersToJSON(s) {
+			var r = {};
+			var reg = /([a-z\-]+):\s?(.*);?/gi;
+			var m;
+			while ((m = reg.exec(s))) {
+				r[m[1]] = m[2];
+			}
+
+			return r;
+		}
+	},
+
+	// JSONP
+	// Injects a script tag into the DOM to be executed and appends a callback function to the window object
+	// @param string/function pathFunc either a string of the URL or a callback function pathFunc(querystringhash, continueFunc);
+	// @param function callback a function to call on completion;
+	jsonp: function(url, callback, callbackID, timeout) {
+
+		var _this = this;
+		var error = _this.error;
+
+		// Change the name of the callback
+		var bool = 0;
+		var head = document.getElementsByTagName('head')[0];
+		var operaFix;
+		var result = error('server_error', 'server_error');
+		var cb = function() {
+			if (!(bool++)) {
+				window.setTimeout(function() {
+					callback(result);
+					head.removeChild(script);
+				}, 0);
+			}
+
+		};
+
+		// Add callback to the window object
+		callbackID = _this.globalEvent(function(json) {
+			result = json;
+			return true;
+
+			// Mark callback as done
+		}, callbackID);
+
+		// The URL is a function for some cases and as such
+		// Determine its value with a callback containing the new parameters of this function.
+		url = url.replace(new RegExp('=\\?(&|$)'), '=' + callbackID + '$1');
+
+		// Build script tag
+		var script = _this.append('script', {
+			id: callbackID,
+			name: callbackID,
+			src: url,
+			async: true,
+			onload: cb,
+			onerror: cb,
+			onreadystatechange: function() {
+				if (/loaded|complete/i.test(this.readyState)) {
+					cb();
+				}
+			}
+		});
+
+		// Opera fix error
+		// Problem: If an error occurs with script loading Opera fails to trigger the script.onerror handler we specified
+		//
+		// Fix:
+		// By setting the request to synchronous we can trigger the error handler when all else fails.
+		// This action will be ignored if we've already called the callback handler "cb" with a successful onload event
+		if (window.navigator.userAgent.toLowerCase().indexOf('opera') > -1) {
+			operaFix = _this.append('script', {
+				text: 'document.getElementById(\'' + callbackID + '\').onerror();'
+			});
+			script.async = false;
+		}
+
+		// Add timeout
+		if (timeout) {
+			window.setTimeout(function() {
+				result = error('timeout', 'timeout');
+				cb();
+			}, timeout);
+		}
+
+		// TODO: add fix for IE,
+		// However: unable recreate the bug of firing off the onreadystatechange before the script content has been executed and the value of "result" has been defined.
+		// Inject script tag into the head element
+		head.appendChild(script);
+
+		// Append Opera Fix to run after our script
+		if (operaFix) {
+			head.appendChild(operaFix);
+		}
+	},
+
+	// Post
+	// Send information to a remote location using the post mechanism
+	// @param string uri path
+	// @param object data, key value data to send
+	// @param function callback, function to execute in response
+	post: function(url, data, options, callback, callbackID, timeout) {
+
+		var _this = this;
+		var error = _this.error;
+		var doc = document;
+
+		// This hack needs a form
+		var form = null;
+		var reenableAfterSubmit = [];
+		var newform;
+		var i = 0;
+		var x = null;
+		var bool = 0;
+		var cb = function(r) {
+			if (!(bool++)) {
+				callback(r);
+			}
+		};
+
+		// What is the name of the callback to contain
+		// We'll also use this to name the iframe
+		_this.globalEvent(cb, callbackID);
+
+		// Build the iframe window
+		var win;
+		try {
+			// IE7 hack, only lets us define the name here, not later.
+			win = doc.createElement('<iframe name="' + callbackID + '">');
+		}
+		catch (e) {
+			win = doc.createElement('iframe');
+		}
+
+		win.name = callbackID;
+		win.id = callbackID;
+		win.style.display = 'none';
+
+		// Override callback mechanism. Triggger a response onload/onerror
+		if (options && options.callbackonload) {
+			// Onload is being fired twice
+			win.onload = function() {
+				cb({
+					response: 'posted',
+					message: 'Content was posted'
+				});
+			};
+		}
+
+		if (timeout) {
+			setTimeout(function() {
+				cb(error('timeout', 'The post operation timed out'));
+			}, timeout);
+		}
+
+		doc.body.appendChild(win);
+
+		// If we are just posting a single item
+		if (_this.domInstance('form', data)) {
+			// Get the parent form
+			form = data.form;
+
+			// Loop through and disable all of its siblings
+			for (i = 0; i < form.elements.length; i++) {
+				if (form.elements[i] !== data) {
+					form.elements[i].setAttribute('disabled', true);
+				}
+			}
+
+			// Move the focus to the form
+			data = form;
+		}
+
+		// Posting a form
+		if (_this.domInstance('form', data)) {
+			// This is a form element
+			form = data;
+
+			// Does this form need to be a multipart form?
+			for (i = 0; i < form.elements.length; i++) {
+				if (!form.elements[i].disabled && form.elements[i].type === 'file') {
+					form.encoding = form.enctype = 'multipart/form-data';
+					form.elements[i].setAttribute('name', 'file');
+				}
+			}
+		}
+		else {
+			// Its not a form element,
+			// Therefore it must be a JSON object of Key=>Value or Key=>Element
+			// If anyone of those values are a input type=file we shall shall insert its siblings into the form for which it belongs.
+			for (x in data) if (data.hasOwnProperty(x)) {
+				// Is this an input Element?
+				if (_this.domInstance('input', data[x]) && data[x].type === 'file') {
+					form = data[x].form;
+					form.encoding = form.enctype = 'multipart/form-data';
+				}
+			}
+
+			// Do If there is no defined form element, lets create one.
+			if (!form) {
+				// Build form
+				form = doc.createElement('form');
+				doc.body.appendChild(form);
+				newform = form;
+			}
+
+			var input;
+
+			// Add elements to the form if they dont exist
+			for (x in data) if (data.hasOwnProperty(x)) {
+
+				// Is this an element?
+				var el = (_this.domInstance('input', data[x]) || _this.domInstance('textArea', data[x]) || _this.domInstance('select', data[x]));
+
+				// Is this not an input element, or one that exists outside the form.
+				if (!el || data[x].form !== form) {
+
+					// Does an element have the same name?
+					var inputs = form.elements[x];
+					if (input) {
+						// Remove it.
+						if (!(inputs instanceof NodeList)) {
+							inputs = [inputs];
+						}
+
+						for (i = 0; i < inputs.length; i++) {
+							inputs[i].parentNode.removeChild(inputs[i]);
+						}
+
+					}
+
+					// Create an input element
+					input = doc.createElement('input');
+					input.setAttribute('type', 'hidden');
+					input.setAttribute('name', x);
+
+					// Does it have a value attribute?
+					if (el) {
+						input.value = data[x].value;
+					}
+					else if (_this.domInstance(null, data[x])) {
+						input.value = data[x].innerHTML || data[x].innerText;
+					}
+					else {
+						input.value = data[x];
+					}
+
+					form.appendChild(input);
+				}
+
+				// It is an element, which exists within the form, but the name is wrong
+				else if (el && data[x].name !== x) {
+					data[x].setAttribute('name', x);
+					data[x].name = x;
+				}
+			}
+
+			// Disable elements from within the form if they weren't specified
+			for (i = 0; i < form.elements.length; i++) {
+
+				input = form.elements[i];
+
+				// Does the same name and value exist in the parent
+				if (!(input.name in data) && input.getAttribute('disabled') !== true) {
+					// Disable
+					input.setAttribute('disabled', true);
+
+					// Add re-enable to callback
+					reenableAfterSubmit.push(input);
+				}
+			}
+		}
+
+		// Set the target of the form
+		form.setAttribute('method', 'POST');
+		form.setAttribute('target', callbackID);
+		form.target = callbackID;
+
+		// Update the form URL
+		form.setAttribute('action', url);
+
+		// Submit the form
+		// Some reason this needs to be offset from the current window execution
+		setTimeout(function() {
+			form.submit();
+
+			setTimeout(function() {
+				try {
+					// Remove the iframe from the page.
+					//win.parentNode.removeChild(win);
+					// Remove the form
+					if (newform) {
+						newform.parentNode.removeChild(newform);
+					}
+				}
+				catch (e) {
+					try {
+						console.error('HelloJS: could not remove iframe');
+					}
+					catch (ee) {}
+				}
+
+				// Reenable the disabled form
+				for (var i = 0; i < reenableAfterSubmit.length; i++) {
+					if (reenableAfterSubmit[i]) {
+						reenableAfterSubmit[i].setAttribute('disabled', false);
+						reenableAfterSubmit[i].disabled = false;
+					}
+				}
+			}, 0);
+		}, 100);
+	},
+
+	// Some of the providers require that only multipart is used with non-binary forms.
+	// This function checks whether the form contains binary data
+	hasBinary: function(data) {
+		for (var x in data) if (data.hasOwnProperty(x)) {
+			if (this.isBinary(data[x])) {
+				return true;
+			}
+		}
+
+		return false;
+	},
+
+	// Determines if a variable Either Is or like a FormInput has the value of a Blob
+
+	isBinary: function(data) {
+
+		return data instanceof Object && (
+		(this.domInstance('input', data) && data.type === 'file') ||
+		('FileList' in window && data instanceof window.FileList) ||
+		('File' in window && data instanceof window.File) ||
+		('Blob' in window && data instanceof window.Blob));
+
+	},
+
+	// Convert Data-URI to Blob string
+	toBlob: function(dataURI) {
+		var reg = /^data\:([^;,]+(\;charset=[^;,]+)?)(\;base64)?,/i;
+		var m = dataURI.match(reg);
+		if (!m) {
+			return dataURI;
+		}
+
+		var binary = atob(dataURI.replace(reg, ''));
+		var array = [];
+		for (var i = 0; i < binary.length; i++) {
+			array.push(binary.charCodeAt(i));
+		}
+
+		return new Blob([new Uint8Array(array)], {type: m[1]});
+	}
+
+});
+
+// EXTRA: Convert FormElement to JSON for POSTing
+// Wrappers to add additional functionality to existing functions
+(function(hello) {
+
+	// Copy original function
+	var api = hello.api;
+	var utils = hello.utils;
+
+	utils.extend(utils, {
+
+		// DataToJSON
+		// This takes a FormElement|NodeList|InputElement|MixedObjects and convers the data object to JSON.
+		dataToJSON: function(p) {
+
+			var _this = this;
+			var w = window;
+			var data = p.data;
+
+			// Is data a form object
+			if (_this.domInstance('form', data)) {
+				data = _this.nodeListToJSON(data.elements);
+			}
+			else if ('NodeList' in w && data instanceof NodeList) {
+				data = _this.nodeListToJSON(data);
+			}
+			else if (_this.domInstance('input', data)) {
+				data = _this.nodeListToJSON([data]);
+			}
+
+			// Is data a blob, File, FileList?
+			if (('File' in w && data instanceof w.File) ||
+				('Blob' in w && data instanceof w.Blob) ||
+				('FileList' in w && data instanceof w.FileList)) {
+				data = {file: data};
+			}
+
+			// Loop through data if it's not form data it must now be a JSON object
+			if (!('FormData' in w && data instanceof w.FormData)) {
+
+				for (var x in data) if (data.hasOwnProperty(x)) {
+
+					if ('FileList' in w && data[x] instanceof w.FileList) {
+						if (data[x].length === 1) {
+							data[x] = data[x][0];
+						}
+					}
+					else if (_this.domInstance('input', data[x]) && data[x].type === 'file') {
+						continue;
+					}
+					else if (_this.domInstance('input', data[x]) ||
+						_this.domInstance('select', data[x]) ||
+						_this.domInstance('textArea', data[x])) {
+						data[x] = data[x].value;
+					}
+					else if (_this.domInstance(null, data[x])) {
+						data[x] = data[x].innerHTML || data[x].innerText;
+					}
+				}
+			}
+
+			p.data = data;
+			return data;
+		},
+
+		// NodeListToJSON
+		// Given a list of elements extrapolate their values and return as a json object
+		nodeListToJSON: function(nodelist) {
+
+			var json = {};
+
+			// Create a data string
+			for (var i = 0; i < nodelist.length; i++) {
+
+				var input = nodelist[i];
+
+				// If the name of the input is empty or diabled, dont add it.
+				if (input.disabled || !input.name) {
+					continue;
+				}
+
+				// Is this a file, does the browser not support 'files' and 'FormData'?
+				if (input.type === 'file') {
+					json[input.name] = input;
+				}
+				else {
+					json[input.name] = input.value || input.innerHTML;
+				}
+			}
+
+			return json;
+		}
+	});
+
+	// Replace it
+	hello.api = function() {
+
+		// Get arguments
+		var p = utils.args({path: 's!', method: 's', data:'o', timeout: 'i', callback: 'f'}, arguments);
+
+		// Change for into a data object
+		if (p.data) {
+			utils.dataToJSON(p);
+		}
+
+		return api.call(this, p);
+	};
+
+})(hello);
+
+// Script to support ChromeApps
+// This overides the hello.utils.popup method to support chrome.identity.launchWebAuthFlow
+// See https://developer.chrome.com/apps/app_identity#non
+
+// Is this a chrome app?
+
+if (typeof chrome === 'object' && typeof chrome.identity === 'object' && chrome.identity.launchWebAuthFlow) {
+
+	(function() {
+
+		// Swap the popup method
+		hello.utils.popup = function(url) {
+
+			return _open(url, true);
+
+		};
+
+		// Swap the hidden iframe method
+		hello.utils.iframe = function(url) {
+
+			_open(url, false);
+
+		};
+
+		// Swap the request_cors method
+		hello.utils.request_cors = function(callback) {
+
+			callback();
+
+			// Always run as CORS
+
+			return true;
+		};
+
+		// Swap the storage method
+		var _cache = {};
+		chrome.storage.local.get('hello', function(r) {
+			// Update the cache
+			_cache = r.hello || {};
+		});
+
+		hello.utils.store = function(name, value) {
+
+			// Get all
+			if (arguments.length === 0) {
+				return _cache;
+			}
+
+			// Get
+			if (arguments.length === 1) {
+				return _cache[name] || null;
+			}
+
+			// Set
+			if (value) {
+				_cache[name] = value;
+				chrome.storage.local.set({hello: _cache});
+				return value;
+			}
+
+			// Delete
+			if (value === null) {
+				delete _cache[name];
+				chrome.storage.local.set({hello: _cache});
+				return null;
+			}
+		};
+
+		// Open function
+		function _open(url, interactive) {
+
+			// Launch
+			var ref = {
+				closed: false
+			};
+
+			// Launch the webAuthFlow
+			chrome.identity.launchWebAuthFlow({
+				url: url,
+				interactive: interactive
+			}, function(responseUrl) {
+
+				// Did the user cancel this prematurely
+				if (responseUrl === undefined) {
+					ref.closed = true;
+					return;
+				}
+
+				// Split appart the URL
+				var a = hello.utils.url(responseUrl);
+
+				// The location can be augmented in to a location object like so...
+				// We dont have window operations on the popup so lets create some
+				var _popup = {
+					location: {
+
+						// Change the location of the popup
+						assign: function(url) {
+
+							// If there is a secondary reassign
+							// In the case of OAuth1
+							// Trigger this in non-interactive mode.
+							_open(url, false);
+						},
+
+						search: a.search,
+						hash: a.hash,
+						href: a.href
+					},
+					close: function() {}
+				};
+
+				// Then this URL contains information which HelloJS must process
+				// URL string
+				// Window - any action such as window relocation goes here
+				// Opener - the parent window which opened this, aka this script
+
+				hello.utils.responseHandler(_popup, window);
+			});
+
+			// Return the reference
+			return ref;
+		}
+
+	})();
+}
+
+(function(hello) {
+
+	// OAuth1
+	var OAuth1Settings = {
+		version: '1.0',
+		auth: 'https://www.dropbox.com/1/oauth/authorize',
+		request: 'https://api.dropbox.com/1/oauth/request_token',
+		token: 'https://api.dropbox.com/1/oauth/access_token'
+	};
+
+	// OAuth2 Settings
+	var OAuth2Settings = {
+		version: 2,
+		auth: 'https://www.dropbox.com/1/oauth2/authorize',
+		grant: 'https://api.dropbox.com/1/oauth2/token'
+	};
+
+	// Initiate the Dropbox module
+	hello.init({
+
+		dropbox: {
+
+			name: 'Dropbox',
+
+			oauth: OAuth2Settings,
+
+			login: function(p) {
+				// OAuth2 non-standard adjustments
+				p.qs.scope = '';
+				delete p.qs.display;
+
+				// Should this be run as OAuth1?
+				// If the redirect_uri is is HTTP (non-secure) then its required to revert to the OAuth1 endpoints
+				var redirect = decodeURIComponent(p.qs.redirect_uri);
+				if (redirect.indexOf('http:') === 0 && redirect.indexOf('http://localhost/') !== 0) {
+
+					// Override the dropbox OAuth settings.
+					hello.services.dropbox.oauth = OAuth1Settings;
+				}
+				else {
+					// Override the dropbox OAuth settings.
+					hello.services.dropbox.oauth = OAuth2Settings;
+				}
+
+				// The dropbox login window is a different size
+				p.options.popup.width = 1000;
+				p.options.popup.height = 1000;
+			},
+
+			/*
+				Dropbox does not allow insecure HTTP URI's in the redirect_uri field
+				...otherwise I'd love to use OAuth2
+
+				Follow request https://forums.dropbox.com/topic.php?id=106505
+
+				p.qs.response_type = 'code';
+				oauth: {
+					version: 2,
+					auth: 'https://www.dropbox.com/1/oauth2/authorize',
+					grant: 'https://api.dropbox.com/1/oauth2/token'
+				}
+			*/
+
+			// API Base URL
+			base: 'https://api.dropbox.com/1/',
+
+			// Bespoke setting: this is states whether to use the custom environment of Dropbox or to use their own environment
+			// Because it's notoriously difficult for Dropbox too provide access from other webservices, this defaults to Sandbox
+			root: 'sandbox',
+
+			// Map GET requests
+			get: {
+				me: 'account/info',
+
+				// Https://www.dropbox.com/developers/core/docs#metadata
+				'me/files': req('metadata/auto/@{parent|}'),
+				'me/folder': req('metadata/auto/@{id}'),
+				'me/folders': req('metadata/auto/'),
+
+				'default': function(p, callback) {
+					if (p.path.match('https://api-content.dropbox.com/1/files/')) {
+						// This is a file, return binary data
+						p.method = 'blob';
+					}
+
+					callback(p.path);
+				}
+			},
+
+			post: {
+				'me/files': function(p, callback) {
+
+					var path = p.data.parent;
+					var fileName = p.data.name;
+
+					p.data = {
+						file: p.data.file
+					};
+
+					// Does this have a data-uri to upload as a file?
+					if (typeof (p.data.file) === 'string') {
+						p.data.file = hello.utils.toBlob(p.data.file);
+					}
+
+					callback('https://api-content.dropbox.com/1/files_put/auto/' + path + '/' + fileName);
+				},
+
+				'me/folders': function(p, callback) {
+
+					var name = p.data.name;
+					p.data = {};
+
+					callback('fileops/create_folder?root=@{root|sandbox}&' + hello.utils.param({
+						path: name
+					}));
+				}
+			},
+
+			// Map DELETE requests
+			del: {
+				'me/files': 'fileops/delete?root=@{root|sandbox}&path=@{id}',
+				'me/folder': 'fileops/delete?root=@{root|sandbox}&path=@{id}'
+			},
+
+			wrap: {
+				me: function(o) {
+					formatError(o);
+					if (!o.uid) {
+						return o;
+					}
+
+					o.name = o.display_name;
+					var m = o.name.split(' ');
+					o.first_name = m.shift();
+					o.last_name = m.join(' ');
+					o.id = o.uid;
+					delete o.uid;
+					delete o.display_name;
+					return o;
+				},
+
+				'default': function(o, headers, req) {
+					formatError(o);
+					if (o.is_dir && o.contents) {
+						o.data = o.contents;
+						delete o.contents;
+
+						o.data.forEach(function(item) {
+							item.root = o.root;
+							formatFile(item, headers, req);
+						});
+					}
+
+					formatFile(o, headers, req);
+
+					if (o.is_deleted) {
+						o.success = true;
+					}
+
+					return o;
+				}
+			},
+
+			// Doesn't return the CORS headers
+			xhr: function(p) {
+
+				// The proxy supports allow-cross-origin-resource
+				// Alas that's the only thing we're using.
+				if (p.data && p.data.file) {
+					var file = p.data.file;
+					if (file) {
+						if (file.files) {
+							p.data = file.files[0];
+						}
+						else {
+							p.data = file;
+						}
+					}
+				}
+
+				if (p.method === 'delete') {
+					p.method = 'post';
+				}
+
+				return true;
+			},
+
+			form: function(p, qs) {
+				delete qs.state;
+				delete qs.redirect_uri;
+			}
+		}
+	});
+
+	function formatError(o) {
+		if (o && 'error' in o) {
+			o.error = {
+				code: 'server_error',
+				message: o.error.message || o.error
+			};
+		}
+	}
+
+	function formatFile(o, headers, req) {
+
+		if (typeof o !== 'object' ||
+			(typeof Blob !== 'undefined' && o instanceof Blob) ||
+			(typeof ArrayBuffer !== 'undefined' && o instanceof ArrayBuffer)) {
+			// This is a file, let it through unformatted
+			return;
+		}
+
+		if ('error' in o) {
+			return;
+		}
+
+		var path = (o.root !== 'app_folder' ? o.root : '') + o.path.replace(/\&/g, '%26');
+		path = path.replace(/^\//, '');
+		if (o.thumb_exists) {
+			o.thumbnail = req.oauth_proxy + '?path=' +
+			encodeURIComponent('https://api-content.dropbox.com/1/thumbnails/auto/' + path + '?format=jpeg&size=m') + '&access_token=' + req.options.access_token;
+		}
+
+		o.type = (o.is_dir ? 'folder' : o.mime_type);
+		o.name = o.path.replace(/.*\//g, '');
+		if (o.is_dir) {
+			o.files = path.replace(/^\//, '');
+		}
+		else {
+			o.downloadLink = hello.settings.oauth_proxy + '?path=' +
+			encodeURIComponent('https://api-content.dropbox.com/1/files/auto/' + path) + '&access_token=' + req.options.access_token;
+			o.file = 'https://api-content.dropbox.com/1/files/auto/' + path;
+		}
+
+		if (!o.id) {
+			o.id = o.path.replace(/^\//, '');
+		}
+
+		// O.media = 'https://api-content.dropbox.com/1/files/' + path;
+	}
+
+	function req(str) {
+		return function(p, cb) {
+			delete p.query.limit;
+			cb(str);
+		};
+	}
+
+})(hello);
+
+(function(hello) {
+
+	hello.init({
+
+		facebook: {
+
+			name: 'Facebook',
+
+			// SEE https://developers.facebook.com/docs/facebook-login/manually-build-a-login-flow/v2.1
+			oauth: {
+				version: 2,
+				auth: 'https://www.facebook.com/dialog/oauth/',
+				grant: 'https://graph.facebook.com/oauth/access_token'
+			},
+
+			// Authorization scopes
+			scope: {
+				basic: 'public_profile',
+				email: 'email',
+				share: 'user_posts',
+				birthday: 'user_birthday',
+				events: 'user_events',
+				photos: 'user_photos,user_videos',
+				videos: 'user_photos,user_videos',
+				friends: 'user_friends',
+				files: 'user_photos,user_videos',
+				publish_files: 'user_photos,user_videos,publish_actions',
+				publish: 'publish_actions',
+
+				// Deprecated in v2.0
+				// Create_event	: 'create_event',
+
+				offline_access: 'offline_access'
+			},
+
+			// Refresh the access_token
+			refresh: true,
+
+			login: function(p) {
+
+				// Reauthenticate
+				// https://developers.facebook.com/docs/facebook-login/reauthentication
+				if (p.options.force) {
+					p.qs.auth_type = 'reauthenticate';
+				}
+
+				// The facebook login window is a different size.
+				p.options.popup.width = 580;
+				p.options.popup.height = 400;
+			},
+
+			logout: function(callback, options) {
+				// Assign callback to a global handler
+				var callbackID = hello.utils.globalEvent(callback);
+				var redirect = encodeURIComponent(hello.settings.redirect_uri + '?' + hello.utils.param({callback:callbackID, result: JSON.stringify({force:true}), state: '{}'}));
+				var token = (options.authResponse || {}).access_token;
+				hello.utils.iframe('https://www.facebook.com/logout.php?next=' + redirect + '&access_token=' + token);
+
+				// Possible responses:
+				// String URL	- hello.logout should handle the logout
+				// Undefined	- this function will handle the callback
+				// True - throw a success, this callback isn't handling the callback
+				// False - throw a error
+				if (!token) {
+					// If there isn't a token, the above wont return a response, so lets trigger a response
+					return false;
+				}
+			},
+
+			// API Base URL
+			base: 'https://graph.facebook.com/v2.4/',
+
+			// Map GET requests
+			get: {
+				me: 'me?fields=email,first_name,last_name,name,timezone,verified',
+				'me/friends': 'me/friends',
+				'me/following': 'me/friends',
+				'me/followers': 'me/friends',
+				'me/share': 'me/feed',
+				'me/like': 'me/likes',
+				'me/files': 'me/albums',
+				'me/albums': 'me/albums?fields=cover_photo,name',
+				'me/album': '@{id}/photos?fields=picture',
+				'me/photos': 'me/photos',
+				'me/photo': '@{id}',
+				'friend/albums': '@{id}/albums',
+				'friend/photos': '@{id}/photos'
+
+				// Pagination
+				// Https://developers.facebook.com/docs/reference/api/pagination/
+			},
+
+			// Map POST requests
+			post: {
+				'me/share': 'me/feed',
+				'me/photo': '@{id}'
+
+				// Https://developers.facebook.com/docs/graph-api/reference/v2.2/object/likes/
+			},
+
+			wrap: {
+				me: formatUser,
+				'me/friends': formatFriends,
+				'me/following': formatFriends,
+				'me/followers': formatFriends,
+				'me/albums': format,
+				'me/photos': format,
+				'me/files': format,
+				'default': format
+			},
+
+			// Special requirements for handling XHR
+			xhr: function(p, qs) {
+				if (p.method === 'get' || p.method === 'post') {
+					qs.suppress_response_codes = true;
+				}
+
+				// Is this a post with a data-uri?
+				if (p.method === 'post' && p.data && typeof (p.data.file) === 'string') {
+					// Convert the Data-URI to a Blob
+					p.data.file = hello.utils.toBlob(p.data.file);
+				}
+
+				return true;
+			},
+
+			// Special requirements for handling JSONP fallback
+			jsonp: function(p, qs) {
+				var m = p.method;
+				if (m !== 'get' && !hello.utils.hasBinary(p.data)) {
+					p.data.method = m;
+					p.method = 'get';
+				}
+				else if (p.method === 'delete') {
+					qs.method = 'delete';
+					p.method = 'post';
+				}
+			},
+
+			// Special requirements for iframe form hack
+			form: function(p) {
+				return {
+					// Fire the callback onload
+					callbackonload: true
+				};
+			}
+		}
+	});
+
+	var base = 'https://graph.facebook.com/';
+
+	function formatUser(o) {
+		if (o.id) {
+			o.thumbnail = o.picture = 'https://graph.facebook.com/' + o.id + '/picture';
+		}
+
+		return o;
+	}
+
+	function formatFriends(o) {
+		if ('data' in o) {
+			o.data.forEach(formatUser);
+		}
+
+		return o;
+	}
+
+	function format(o, headers, req) {
+		if (typeof o === 'boolean') {
+			o = {success: o};
+		}
+
+		if (o && 'data' in o) {
+			var token = req.query.access_token;
+			o.data.forEach(function(d) {
+
+				if (d.picture) {
+					d.thumbnail = d.picture;
+				}
+
+				d.pictures = (d.images || [])
+					.sort(function(a, b) {
+						return a.width - b.width;
+					});
+
+				if (d.cover_photo && d.cover_photo.id) {
+					d.thumbnail = base + d.cover_photo.id + '/picture?access_token=' + token;
+				}
+
+				if (d.type === 'album') {
+					d.files = d.photos = base + d.id + '/photos';
+				}
+
+				if (d.can_upload) {
+					d.upload_location = base + d.id + '/photos';
+				}
+			});
+		}
+
+		return o;
+	}
+
+})(hello);
+
+(function(hello) {
+
+	hello.init({
+
+		flickr: {
+
+			name: 'Flickr',
+
+			// Ensure that you define an oauth_proxy
+			oauth: {
+				version: '1.0a',
+				auth: 'https://www.flickr.com/services/oauth/authorize?perms=read',
+				request: 'https://www.flickr.com/services/oauth/request_token',
+				token: 'https://www.flickr.com/services/oauth/access_token'
+			},
+
+			// API base URL
+			base: 'https://api.flickr.com/services/rest',
+
+			// Map GET resquests
+			get: {
+				me: sign('flickr.people.getInfo'),
+				'me/friends': sign('flickr.contacts.getList', {per_page:'@{limit|50}'}),
+				'me/following': sign('flickr.contacts.getList', {per_page:'@{limit|50}'}),
+				'me/followers': sign('flickr.contacts.getList', {per_page:'@{limit|50}'}),
+				'me/albums': sign('flickr.photosets.getList', {per_page:'@{limit|50}'}),
+				'me/album': sign('flickr.photosets.getPhotos', {photoset_id: '@{id}'}),
+				'me/photos': sign('flickr.people.getPhotos', {per_page:'@{limit|50}'})
+			},
+
+			wrap: {
+				me: function(o) {
+					formatError(o);
+					o = checkResponse(o, 'person');
+					if (o.id) {
+						if (o.realname) {
+							o.name = o.realname._content;
+							var m = o.name.split(' ');
+							o.first_name = m.shift();
+							o.last_name = m.join(' ');
+						}
+
+						o.thumbnail = getBuddyIcon(o, 'l');
+						o.picture = getBuddyIcon(o, 'l');
+					}
+
+					return o;
+				},
+
+				'me/friends': formatFriends,
+				'me/followers': formatFriends,
+				'me/following': formatFriends,
+				'me/albums': function(o) {
+					formatError(o);
+					o = checkResponse(o, 'photosets');
+					paging(o);
+					if (o.photoset) {
+						o.data = o.photoset;
+						o.data.forEach(function(item) {
+							item.name = item.title._content;
+							item.photos = 'https://api.flickr.com/services/rest' + getApiUrl('flickr.photosets.getPhotos', {photoset_id: item.id}, true);
+						});
+
+						delete o.photoset;
+					}
+
+					return o;
+				},
+
+				'me/photos': function(o) {
+					formatError(o);
+					return formatPhotos(o);
+				},
+
+				'default': function(o) {
+					formatError(o);
+					return formatPhotos(o);
+				}
+			},
+
+			xhr: false,
+
+			jsonp: function(p, qs) {
+				if (p.method == 'get') {
+					delete qs.callback;
+					qs.jsoncallback = p.callbackID;
+				}
+			}
+		}
+	});
+
+	function getApiUrl(method, extraParams, skipNetwork) {
+		var url = ((skipNetwork) ? '' : 'flickr:') +
+			'?method=' + method +
+			'&api_key=' + hello.services.flickr.id +
+			'&format=json';
+		for (var param in extraParams) {
+			if (extraParams.hasOwnProperty(param)) {
+				url += '&' + param + '=' + extraParams[param];
+			}
+		}
+
+		return url;
+	}
+
+	// This is not exactly neat but avoid to call
+	// The method 'flickr.test.login' for each api call
+
+	function withUser(cb) {
+		var auth = hello.getAuthResponse('flickr');
+		cb(auth && auth.user_nsid ? auth.user_nsid : null);
+	}
+
+	function sign(url, params) {
+		if (!params) {
+			params = {};
+		}
+
+		return function(p, callback) {
+			withUser(function(userId) {
+				params.user_id = userId;
+				callback(getApiUrl(url, params, true));
+			});
+		};
+	}
+
+	function getBuddyIcon(profile, size) {
+		var url = 'https://www.flickr.com/images/buddyicon.gif';
+		if (profile.nsid && profile.iconserver && profile.iconfarm) {
+			url = 'https://farm' + profile.iconfarm + '.staticflickr.com/' +
+				profile.iconserver + '/' +
+				'buddyicons/' + profile.nsid +
+				((size) ? '_' + size : '') + '.jpg';
+		}
+
+		return url;
+	}
+
+	// See: https://www.flickr.com/services/api/misc.urls.html
+	function createPhotoUrl(id, farm, server, secret, size) {
+		size = (size) ? '_' + size : '';
+		return 'https://farm' + farm + '.staticflickr.com/' + server + '/' + id + '_' + secret + size + '.jpg';
+	}
+
+	function formatUser(o) {
+	}
+
+	function formatError(o) {
+		if (o && o.stat && o.stat.toLowerCase() != 'ok') {
+			o.error = {
+				code: 'invalid_request',
+				message: o.message
+			};
+		}
+	}
+
+	function formatPhotos(o) {
+		if (o.photoset || o.photos) {
+			var set = ('photoset' in o) ? 'photoset' : 'photos';
+			o = checkResponse(o, set);
+			paging(o);
+			o.data = o.photo;
+			delete o.photo;
+			for (var i = 0; i < o.data.length; i++) {
+				var photo = o.data[i];
+				photo.name = photo.title;
+				photo.picture = createPhotoUrl(photo.id, photo.farm, photo.server, photo.secret, '');
+				photo.pictures = createPictures(photo.id, photo.farm, photo.server, photo.secret);
+				photo.source = createPhotoUrl(photo.id, photo.farm, photo.server, photo.secret, 'b');
+				photo.thumbnail = createPhotoUrl(photo.id, photo.farm, photo.server, photo.secret, 'm');
+			}
+		}
+
+		return o;
+	}
+
+	// See: https://www.flickr.com/services/api/misc.urls.html
+	function createPictures(id, farm, server, secret) {
+
+		var NO_LIMIT = 2048;
+		var sizes = [
+			{id: 't', max: 100},
+			{id: 'm', max: 240},
+			{id: 'n', max: 320},
+			{id: '', max: 500},
+			{id: 'z', max: 640},
+			{id: 'c', max: 800},
+			{id: 'b', max: 1024},
+			{id: 'h', max: 1600},
+			{id: 'k', max: 2048},
+			{id: 'o', max: NO_LIMIT}
+		];
+
+		return sizes.map(function(size) {
+			return {
+				source: createPhotoUrl(id, farm, server, secret, size.id),
+
+				// Note: this is a guess that's almost certain to be wrong (unless square source)
+				width: size.max,
+				height: size.max
+			};
+		});
+	}
+
+	function checkResponse(o, key) {
+
+		if (key in o) {
+			o = o[key];
+		}
+		else if (!('error' in o)) {
+			o.error = {
+				code: 'invalid_request',
+				message: o.message || 'Failed to get data from Flickr'
+			};
+		}
+
+		return o;
+	}
+
+	function formatFriends(o) {
+		formatError(o);
+		if (o.contacts) {
+			o = checkResponse(o, 'contacts');
+			paging(o);
+			o.data = o.contact;
+			delete o.contact;
+			for (var i = 0; i < o.data.length; i++) {
+				var item = o.data[i];
+				item.id = item.nsid;
+				item.name = item.realname || item.username;
+				item.thumbnail = getBuddyIcon(item, 'm');
+			}
+		}
+
+		return o;
+	}
+
+	function paging(res) {
+		if (res.page && res.pages && res.page !== res.pages) {
+			res.paging = {
+				next: '?page=' + (++res.page)
+			};
+		}
+	}
+
+})(hello);
+
+(function(hello) {
+
+	hello.init({
+
+		foursquare: {
+
+			name: 'Foursquare',
+
+			oauth: {
+				// See: https://developer.foursquare.com/overview/auth
+				version: 2,
+				auth: 'https://foursquare.com/oauth2/authenticate',
+				grant: 'https://foursquare.com/oauth2/access_token'
+			},
+
+			// Refresh the access_token once expired
+			refresh: true,
+
+			base: 'https://api.foursquare.com/v2/',
+
+			get: {
+				me: 'users/self',
+				'me/friends': 'users/self/friends',
+				'me/followers': 'users/self/friends',
+				'me/following': 'users/self/friends'
+			},
+
+			wrap: {
+				me: function(o) {
+					formatError(o);
+					if (o && o.response) {
+						o = o.response.user;
+						formatUser(o);
+					}
+
+					return o;
+				},
+
+				'default': function(o) {
+					formatError(o);
+
+					// Format friends
+					if (o && 'response' in o && 'friends' in o.response && 'items' in o.response.friends) {
+						o.data = o.response.friends.items;
+						o.data.forEach(formatUser);
+						delete o.response;
+					}
+
+					return o;
+				}
+			},
+
+			xhr: formatRequest,
+			jsonp: formatRequest
+		}
+	});
+
+	function formatError(o) {
+		if (o.meta && (o.meta.code === 400 || o.meta.code === 401)) {
+			o.error = {
+				code: 'access_denied',
+				message: o.meta.errorDetail
+			};
+		}
+	}
+
+	function formatUser(o) {
+		if (o && o.id) {
+			o.thumbnail = o.photo.prefix + '100x100' + o.photo.suffix;
+			o.name = o.firstName + ' ' + o.lastName;
+			o.first_name = o.firstName;
+			o.last_name = o.lastName;
+			if (o.contact) {
+				if (o.contact.email) {
+					o.email = o.contact.email;
+				}
+			}
+		}
+	}
+
+	function formatRequest(p, qs) {
+		var token = qs.access_token;
+		delete qs.access_token;
+		qs.oauth_token = token;
+		qs.v = 20121125;
+		return true;
+	}
+
+})(hello);
+
+(function(hello) {
+
+	hello.init({
+
+		github: {
+
+			name: 'GitHub',
+
+			oauth: {
+				version: 2,
+				auth: 'https://github.com/login/oauth/authorize',
+				grant: 'https://github.com/login/oauth/access_token',
+				response_type: 'code'
+			},
+
+			scope: {
+				basic: '',
+				email: 'user:email'
+			},
+
+			base: 'https://api.github.com/',
+
+			get: {
+				me: 'user',
+				'me/friends': 'user/following?per_page=@{limit|100}',
+				'me/following': 'user/following?per_page=@{limit|100}',
+				'me/followers': 'user/followers?per_page=@{limit|100}',
+				'me/like': 'user/starred?per_page=@{limit|100}'
+			},
+
+			wrap: {
+				me: function(o, headers) {
+
+					formatError(o, headers);
+					formatUser(o);
+
+					return o;
+				},
+
+				'default': function(o, headers, req) {
+
+					formatError(o, headers);
+
+					if (Array.isArray(o)) {
+						o = {data:o};
+					}
+
+					if (o.data) {
+						paging(o, headers, req);
+						o.data.forEach(formatUser);
+					}
+
+					return o;
+				}
+			},
+
+			xhr: function(p) {
+
+				if (p.method !== 'get' && p.data) {
+
+					// Serialize payload as JSON
+					p.headers = p.headers || {};
+					p.headers['Content-Type'] = 'application/json';
+					if (typeof (p.data) === 'object') {
+						p.data = JSON.stringify(p.data);
+					}
+				}
+
+				return true;
+			}
+		}
+	});
+
+	function formatError(o, headers) {
+		var code = headers ? headers.statusCode : (o && 'meta' in o && 'status' in o.meta && o.meta.status);
+		if ((code === 401 || code === 403)) {
+			o.error = {
+				code: 'access_denied',
+				message: o.message || (o.data ? o.data.message : 'Could not get response')
+			};
+			delete o.message;
+		}
+	}
+
+	function formatUser(o) {
+		if (o.id) {
+			o.thumbnail = o.picture = o.avatar_url;
+			o.name = o.login;
+		}
+	}
+
+	function paging(res, headers, req) {
+		if (res.data && res.data.length && headers && headers.Link) {
+			var next = headers.Link.match(/<(.*?)>;\s*rel=\"next\"/);
+			if (next) {
+				res.paging = {
+					next: next[1]
+				};
+			}
+		}
+	}
+
+})(hello);
+
+(function(hello) {
+
+	var contactsUrl = 'https://www.google.com/m8/feeds/contacts/default/full?v=3.0&alt=json&max-results=@{limit|1000}&start-index=@{start|1}';
+
+	hello.init({
+
+		google: {
+
+			name: 'Google Plus',
+
+			// See: http://code.google.com/apis/accounts/docs/OAuth2UserAgent.html
+			oauth: {
+				version: 2,
+				auth: 'https://accounts.google.com/o/oauth2/auth',
+				grant: 'https://accounts.google.com/o/oauth2/token'
+			},
+
+			// Authorization scopes
+			scope: {
+				basic: 'https://www.googleapis.com/auth/plus.me profile',
+				email: 'email',
+				birthday: '',
+				events: '',
+				photos: 'https://picasaweb.google.com/data/',
+				videos: 'http://gdata.youtube.com',
+				friends: 'https://www.google.com/m8/feeds, https://www.googleapis.com/auth/plus.login',
+				files: 'https://www.googleapis.com/auth/drive.readonly',
+				publish: '',
+				publish_files: 'https://www.googleapis.com/auth/drive',
+				create_event: '',
+				offline_access: ''
+			},
+
+			scope_delim: ' ',
+
+			login: function(p) {
+				if (p.qs.display === 'none') {
+					// Google doesn't like display=none
+					p.qs.display = '';
+				}
+
+				if (p.qs.response_type === 'code') {
+
+					// Let's set this to an offline access to return a refresh_token
+					p.qs.access_type = 'offline';
+				}
+
+				// Reauthenticate
+				// https://developers.google.com/identity/protocols/
+				if (p.options.force) {
+					p.qs.approval_prompt = 'force';
+				}
+			},
+
+			// API base URI
+			base: 'https://www.googleapis.com/',
+
+			// Map GET requests
+			get: {
+				me: 'plus/v1/people/me',
+
+				// Deprecated Sept 1, 2014
+				//'me': 'oauth2/v1/userinfo?alt=json',
+
+				// See: https://developers.google.com/+/api/latest/people/list
+				'me/friends': 'plus/v1/people/me/people/visible?maxResults=@{limit|100}',
+				'me/following': contactsUrl,
+				'me/followers': contactsUrl,
+				'me/contacts': contactsUrl,
+				'me/share': 'plus/v1/people/me/activities/public?maxResults=@{limit|100}',
+				'me/feed': 'plus/v1/people/me/activities/public?maxResults=@{limit|100}',
+				'me/albums': 'https://picasaweb.google.com/data/feed/api/user/default?alt=json&max-results=@{limit|100}&start-index=@{start|1}',
+				'me/album': function(p, callback) {
+					var key = p.query.id;
+					delete p.query.id;
+					callback(key.replace('/entry/', '/feed/'));
+				},
+
+				'me/photos': 'https://picasaweb.google.com/data/feed/api/user/default?alt=json&kind=photo&max-results=@{limit|100}&start-index=@{start|1}',
+
+				// See: https://developers.google.com/drive/v2/reference/files/list
+				'me/files': 'drive/v2/files?q=%22@{parent|root}%22+in+parents+and+trashed=false&maxResults=@{limit|100}',
+
+				// See: https://developers.google.com/drive/v2/reference/files/list
+				'me/folders': 'drive/v2/files?q=%22@{id|root}%22+in+parents+and+mimeType+=+%22application/vnd.google-apps.folder%22+and+trashed=false&maxResults=@{limit|100}',
+
+				// See: https://developers.google.com/drive/v2/reference/files/list
+				'me/folder': 'drive/v2/files?q=%22@{id|root}%22+in+parents+and+trashed=false&maxResults=@{limit|100}'
+			},
+
+			// Map POST requests
+			post: {
+
+				// Google Drive
+				'me/files': uploadDrive,
+				'me/folders': function(p, callback) {
+					p.data = {
+						title: p.data.name,
+						parents: [{id: p.data.parent || 'root'}],
+						mimeType: 'application/vnd.google-apps.folder'
+					};
+					callback('drive/v2/files');
+				}
+			},
+
+			// Map PUT requests
+			put: {
+				'me/files': uploadDrive
+			},
+
+			// Map DELETE requests
+			del: {
+				'me/files': 'drive/v2/files/@{id}',
+				'me/folder': 'drive/v2/files/@{id}'
+			},
+
+			wrap: {
+				me: function(o) {
+					if (o.id) {
+						o.last_name = o.family_name || (o.name ? o.name.familyName : null);
+						o.first_name = o.given_name || (o.name ? o.name.givenName : null);
+
+						if (o.emails && o.emails.length) {
+							o.email = o.emails[0].value;
+						}
+
+						formatPerson(o);
+					}
+
+					return o;
+				},
+
+				'me/friends': function(o) {
+					if (o.items) {
+						paging(o);
+						o.data = o.items;
+						o.data.forEach(formatPerson);
+						delete o.items;
+					}
+
+					return o;
+				},
+
+				'me/contacts': formatFriends,
+				'me/followers': formatFriends,
+				'me/following': formatFriends,
+				'me/share': formatFeed,
+				'me/feed': formatFeed,
+				'me/albums': gEntry,
+				'me/photos': formatPhotos,
+				'default': gEntry
+			},
+
+			xhr: function(p) {
+
+				if (p.method === 'post' || p.method === 'put') {
+					toJSON(p);
+				}
+
+				return true;
+			},
+
+			// Don't even try submitting via form.
+			// This means no POST operations in <=IE9
+			form: false
+		}
+	});
+
+	function toInt(s) {
+		return parseInt(s, 10);
+	}
+
+	function formatFeed(o) {
+		paging(o);
+		o.data = o.items;
+		delete o.items;
+		return o;
+	}
+
+	// Format: ensure each record contains a name, id etc.
+	function formatItem(o) {
+		if (o.error) {
+			return;
+		}
+
+		if (!o.name) {
+			o.name = o.title || o.message;
+		}
+
+		if (!o.picture) {
+			o.picture = o.thumbnailLink;
+		}
+
+		if (!o.thumbnail) {
+			o.thumbnail = o.thumbnailLink;
+		}
+
+		if (o.mimeType === 'application/vnd.google-apps.folder') {
+			o.type = 'folder';
+			o.files = 'https://www.googleapis.com/drive/v2/files?q=%22' + o.id + '%22+in+parents';
+		}
+
+		return o;
+	}
+
+	function formatImage(image) {
+		return {
+			source: image.url,
+			width: image.width,
+			height: image.height
+		};
+	}
+
+	function formatPhotos(o) {
+		o.data = o.feed.entry.map(formatEntry);
+		delete o.feed;
+	}
+
+	// Google has a horrible JSON API
+	function gEntry(o) {
+		paging(o);
+
+		if ('feed' in o && 'entry' in o.feed) {
+			o.data = o.feed.entry.map(formatEntry);
+			delete o.feed;
+		}
+
+		// Old style: Picasa, etc.
+		else if ('entry' in o) {
+			return formatEntry(o.entry);
+		}
+
+		// New style: Google Drive & Plus
+		else if ('items' in o) {
+			o.data = o.items.map(formatItem);
+			delete o.items;
+		}
+		else {
+			formatItem(o);
+		}
+
+		return o;
+	}
+
+	function formatPerson(o) {
+		o.name = o.displayName || o.name;
+		o.picture = o.picture || (o.image ? o.image.url : null);
+		o.thumbnail = o.picture;
+	}
+
+	function formatFriends(o, headers, req) {
+		paging(o);
+		var r = [];
+		if ('feed' in o && 'entry' in o.feed) {
+			var token = req.query.access_token;
+			for (var i = 0; i < o.feed.entry.length; i++) {
+				var a = o.feed.entry[i];
+
+				a.id	= a.id.$t;
+				a.name	= a.title.$t;
+				delete a.title;
+				if (a.gd$email) {
+					a.email	= (a.gd$email && a.gd$email.length > 0) ? a.gd$email[0].address : null;
+					a.emails = a.gd$email;
+					delete a.gd$email;
+				}
+
+				if (a.updated) {
+					a.updated = a.updated.$t;
+				}
+
+				if (a.link) {
+
+					var pic = (a.link.length > 0) ? a.link[0].href : null;
+					if (pic && a.link[0].gd$etag) {
+						pic += (pic.indexOf('?') > -1 ? '&' : '?') + 'access_token=' + token;
+						a.picture = pic;
+						a.thumbnail = pic;
+					}
+
+					delete a.link;
+				}
+
+				if (a.category) {
+					delete a.category;
+				}
+			}
+
+			o.data = o.feed.entry;
+			delete o.feed;
+		}
+
+		return o;
+	}
+
+	function formatEntry(a) {
+
+		var group = a.media$group;
+		var photo = group.media$content.length ? group.media$content[0] : {};
+		var mediaContent = group.media$content || [];
+		var mediaThumbnail = group.media$thumbnail || [];
+
+		var pictures = mediaContent
+			.concat(mediaThumbnail)
+			.map(formatImage)
+			.sort(function(a, b) {
+				return a.width - b.width;
+			});
+
+		var i = 0;
+		var _a;
+		var p = {
+			id: a.id.$t,
+			name: a.title.$t,
+			description: a.summary.$t,
+			updated_time: a.updated.$t,
+			created_time: a.published.$t,
+			picture: photo ? photo.url : null,
+			pictures: pictures,
+			images: [],
+			thumbnail: photo ? photo.url : null,
+			width: photo.width,
+			height: photo.height
+		};
+
+		// Get feed/children
+		if ('link' in a) {
+			for (i = 0; i < a.link.length; i++) {
+				var d = a.link[i];
+				if (d.rel.match(/\#feed$/)) {
+					p.upload_location = p.files = p.photos = d.href;
+					break;
+				}
+			}
+		}
+
+		// Get images of different scales
+		if ('category' in a && a.category.length) {
+			_a = a.category;
+			for (i = 0; i < _a.length; i++) {
+				if (_a[i].scheme && _a[i].scheme.match(/\#kind$/)) {
+					p.type = _a[i].term.replace(/^.*?\#/, '');
+				}
+			}
+		}
+
+		// Get images of different scales
+		if ('media$thumbnail' in group && group.media$thumbnail.length) {
+			_a = group.media$thumbnail;
+			p.thumbnail = _a[0].url;
+			p.images = _a.map(formatImage);
+		}
+
+		_a = group.media$content;
+
+		if (_a && _a.length) {
+			p.images.push(formatImage(_a[0]));
+		}
+
+		return p;
+	}
+
+	function paging(res) {
+
+		// Contacts V2
+		if ('feed' in res && res.feed.openSearch$itemsPerPage) {
+			var limit = toInt(res.feed.openSearch$itemsPerPage.$t);
+			var start = toInt(res.feed.openSearch$startIndex.$t);
+			var total = toInt(res.feed.openSearch$totalResults.$t);
+
+			if ((start + limit) < total) {
+				res.paging = {
+					next: '?start=' + (start + limit)
+				};
+			}
+		}
+		else if ('nextPageToken' in res) {
+			res.paging = {
+				next: '?pageToken=' + res.nextPageToken
+			};
+		}
+	}
+
+	// Construct a multipart message
+	function Multipart() {
+
+		// Internal body
+		var body = [];
+		var boundary = (Math.random() * 1e10).toString(32);
+		var counter = 0;
+		var lineBreak = '\r\n';
+		var delim = lineBreak + '--' + boundary;
+		var ready = function() {};
+
+		var dataUri = /^data\:([^;,]+(\;charset=[^;,]+)?)(\;base64)?,/i;
+
+		// Add file
+		function addFile(item) {
+			var fr = new FileReader();
+			fr.onload = function(e) {
+				addContent(btoa(e.target.result), item.type + lineBreak + 'Content-Transfer-Encoding: base64');
+			};
+
+			fr.readAsBinaryString(item);
+		}
+
+		// Add content
+		function addContent(content, type) {
+			body.push(lineBreak + 'Content-Type: ' + type + lineBreak + lineBreak + content);
+			counter--;
+			ready();
+		}
+
+		// Add new things to the object
+		this.append = function(content, type) {
+
+			// Does the content have an array
+			if (typeof (content) === 'string' || !('length' in Object(content))) {
+				// Converti to multiples
+				content = [content];
+			}
+
+			for (var i = 0; i < content.length; i++) {
+
+				counter++;
+
+				var item = content[i];
+
+				// Is this a file?
+				// Files can be either Blobs or File types
+				if (
+					(typeof (File) !== 'undefined' && item instanceof File) ||
+					(typeof (Blob) !== 'undefined' && item instanceof Blob)
+				) {
+					// Read the file in
+					addFile(item);
+				}
+
+				// Data-URI?
+				// Data:[<mime type>][;charset=<charset>][;base64],<encoded data>
+				// /^data\:([^;,]+(\;charset=[^;,]+)?)(\;base64)?,/i
+				else if (typeof (item) === 'string' && item.match(dataUri)) {
+					var m = item.match(dataUri);
+					addContent(item.replace(dataUri, ''), m[1] + lineBreak + 'Content-Transfer-Encoding: base64');
+				}
+
+				// Regular string
+				else {
+					addContent(item, type);
+				}
+			}
+		};
+
+		this.onready = function(fn) {
+			ready = function() {
+				if (counter === 0) {
+					// Trigger ready
+					body.unshift('');
+					body.push('--');
+					fn(body.join(delim), boundary);
+					body = [];
+				}
+			};
+
+			ready();
+		};
+	}
+
+	// Upload to Drive
+	// If this is PUT then only augment the file uploaded
+	// PUT https://developers.google.com/drive/v2/reference/files/update
+	// POST https://developers.google.com/drive/manage-uploads
+	function uploadDrive(p, callback) {
+
+		var data = {};
+
+		// Test for DOM element
+		if (p.data &&
+			(typeof (HTMLInputElement) !== 'undefined' && p.data instanceof HTMLInputElement)
+		) {
+			p.data = {file: p.data};
+		}
+
+		if (!p.data.name && Object(Object(p.data.file).files).length && p.method === 'post') {
+			p.data.name = p.data.file.files[0].name;
+		}
+
+		if (p.method === 'post') {
+			p.data = {
+				title: p.data.name,
+				parents: [{id: p.data.parent || 'root'}],
+				file: p.data.file
+			};
+		}
+		else {
+
+			// Make a reference
+			data = p.data;
+			p.data = {};
+
+			// Add the parts to change as required
+			if (data.parent) {
+				p.data.parents = [{id: p.data.parent || 'root'}];
+			}
+
+			if (data.file) {
+				p.data.file = data.file;
+			}
+
+			if (data.name) {
+				p.data.title = data.name;
+			}
+		}
+
+		// Extract the file, if it exists from the data object
+		// If the File is an INPUT element lets just concern ourselves with the NodeList
+		var file;
+		if ('file' in p.data) {
+			file = p.data.file;
+			delete p.data.file;
+
+			if (typeof (file) === 'object' && 'files' in file) {
+				// Assign the NodeList
+				file = file.files;
+			}
+
+			if (!file || !file.length) {
+				callback({
+					error: {
+						code: 'request_invalid',
+						message: 'There were no files attached with this request to upload'
+					}
+				});
+				return;
+			}
+		}
+
+		// Set type p.data.mimeType = Object(file[0]).type || 'application/octet-stream';
+
+		// Construct a multipart message
+		var parts = new Multipart();
+		parts.append(JSON.stringify(p.data), 'application/json');
+
+		// Read the file into a  base64 string... yep a hassle, i know
+		// FormData doesn't let us assign our own Multipart headers and HTTP Content-Type
+		// Alas GoogleApi need these in a particular format
+		if (file) {
+			parts.append(file);
+		}
+
+		parts.onready(function(body, boundary) {
+
+			p.headers['content-type'] = 'multipart/related; boundary="' + boundary + '"';
+			p.data = body;
+
+			callback('upload/drive/v2/files' + (data.id ? '/' + data.id : '') + '?uploadType=multipart');
+		});
+
+	}
+
+	function toJSON(p) {
+		if (typeof (p.data) === 'object') {
+			// Convert the POST into a javascript object
+			try {
+				p.data = JSON.stringify(p.data);
+				p.headers['content-type'] = 'application/json';
+			}
+			catch (e) {}
+		}
+	}
+
+})(hello);
+
+(function(hello) {
+
+	hello.init({
+
+		instagram: {
+
+			name: 'Instagram',
+
+			oauth: {
+				// See: http://instagram.com/developer/authentication/
+				version: 2,
+				auth: 'https://instagram.com/oauth/authorize/',
+				grant: 'https://api.instagram.com/oauth/access_token'
+			},
+
+			// Refresh the access_token once expired
+			refresh: true,
+
+			scope: {
+				basic: 'basic',
+				friends: 'relationships',
+				publish: 'likes comments'
+			},
+
+			scope_delim: ' ',
+
+			login: function(p) {
+				// Instagram throws errors like 'JavaScript API is unsupported' if the display is 'popup'.
+				// Make the display anything but 'popup'
+				p.qs.display = '';
+			},
+
+			base: 'https://api.instagram.com/v1/',
+
+			get: {
+				me: 'users/self',
+				'me/feed': 'users/self/feed?count=@{limit|100}',
+				'me/photos': 'users/self/media/recent?min_id=0&count=@{limit|100}',
+				'me/friends': 'users/self/follows?count=@{limit|100}',
+				'me/following': 'users/self/follows?count=@{limit|100}',
+				'me/followers': 'users/self/followed-by?count=@{limit|100}',
+				'friend/photos': 'users/@{id}/media/recent?min_id=0&count=@{limit|100}'
+			},
+
+			post: {
+				'me/like': function(p, callback) {
+					var id = p.data.id;
+					p.data = {};
+					callback('media/' + id + '/likes');
+				}
+			},
+
+			del: {
+				'me/like': 'media/@{id}/likes'
+			},
+
+			wrap: {
+				me: function(o) {
+
+					formatError(o);
+
+					if ('data' in o) {
+						o.id = o.data.id;
+						o.thumbnail = o.data.profile_picture;
+						o.name = o.data.full_name || o.data.username;
+					}
+
+					return o;
+				},
+
+				'me/friends': formatFriends,
+				'me/following': formatFriends,
+				'me/followers': formatFriends,
+				'me/photos': function(o) {
+
+					formatError(o);
+					paging(o);
+
+					if ('data' in o) {
+						o.data = o.data.filter(function(d) {
+							return d.type === 'image';
+						});
+
+						o.data.forEach(function(d) {
+							d.name = d.caption ? d.caption.text : null;
+							d.thumbnail = d.images.thumbnail.url;
+							d.picture = d.images.standard_resolution.url;
+							d.pictures = Object.keys(d.images)
+								.map(function(key) {
+									var image = d.images[key];
+									return formatImage(image);
+								})
+								.sort(function(a, b) {
+									return a.width - b.width;
+								});
+						});
+					}
+
+					return o;
+				},
+
+				'default': function(o) {
+					o = formatError(o);
+					paging(o);
+					return o;
+				}
+			},
+
+			// Instagram does not return any CORS Headers
+			// So besides JSONP we're stuck with proxy
+			xhr: function(p, qs) {
+
+				var method = p.method;
+				var proxy = method !== 'get';
+
+				if (proxy) {
+
+					if ((method === 'post' || method === 'put') && p.query.access_token) {
+						p.data.access_token = p.query.access_token;
+						delete p.query.access_token;
+					}
+
+					// No access control headers
+					// Use the proxy instead
+					p.proxy = proxy;
+				}
+
+				return proxy;
+			},
+
+			// No form
+			form: false
+		}
+	});
+
+	function formatImage(image) {
+		return {
+			source: image.url,
+			width: image.width,
+			height: image.height
+		};
+	}
+
+	function formatError(o) {
+		if (typeof o === 'string') {
+			return {
+				error: {
+					code: 'invalid_request',
+					message: o
+				}
+			};
+		}
+
+		if (o && 'meta' in o && 'error_type' in o.meta) {
+			o.error = {
+				code: o.meta.error_type,
+				message: o.meta.error_message
+			};
+		}
+
+		return o;
+	}
+
+	function formatFriends(o) {
+		paging(o);
+		if (o && 'data' in o) {
+			o.data.forEach(formatFriend);
+		}
+
+		return o;
+	}
+
+	function formatFriend(o) {
+		if (o.id) {
+			o.thumbnail = o.profile_picture;
+			o.name = o.full_name || o.username;
+		}
+	}
+
+	// See: http://instagram.com/developer/endpoints/
+	function paging(res) {
+		if ('pagination' in res) {
+			res.paging = {
+				next: res.pagination.next_url
+			};
+			delete res.pagination;
+		}
+	}
+
+})(hello);
+
+(function(hello) {
+
+	hello.init({
+
+		joinme: {
+
+			name: 'join.me',
+
+			oauth: {
+				version: 2,
+				auth: 'https://secure.join.me/api/public/v1/auth/oauth2',
+				grant: 'https://secure.join.me/api/public/v1/auth/oauth2'
+			},
+
+			refresh: false,
+
+			scope: {
+				basic: 'user_info',
+				user: 'user_info',
+				scheduler: 'scheduler',
+				start: 'start_meeting'
+			},
+
+			scope_delim: ' ',
+
+			login: function(p) {
+				p.options.popup.width = 400;
+				p.options.popup.height = 700;
+			},
+
+			base: 'https://api.join.me/v1/',
+
+			get: {
+				me: 'user',
+				meetings: 'meetings',
+				'meetings/info': 'meetings/@{id}'
+			},
+
+			post: {
+				'meetings/start/adhoc': function(p, callback) {
+					callback('meetings/start');
+				},
+
+				'meetings/start/scheduled': function(p, callback) {
+					var meetingId = p.data.meetingId;
+					p.data = {};
+					callback('meetings/' + meetingId + '/start');
+				},
+
+				'meetings/schedule': function(p, callback) {
+					callback('meetings');
+				}
+			},
+
+			patch: {
+				'meetings/update': function(p, callback) {
+					callback('meetings/' + p.data.meetingId);
+				}
+			},
+
+			del: {
+				'meetings/delete': 'meetings/@{id}'
+			},
+
+			wrap: {
+				me: function(o, headers) {
+					formatError(o, headers);
+
+					if (!o.email) {
+						return o;
+					}
+
+					o.name = o.fullName;
+					o.first_name = o.name.split(' ')[0];
+					o.last_name = o.name.split(' ')[1];
+					o.id = o.email;
+
+					return o;
+				},
+
+				'default': function(o, headers) {
+					formatError(o, headers);
+
+					return o;
+				}
+			},
+
+			xhr: formatRequest
+
+		}
+	});
+
+	function formatError(o, headers) {
+		var errorCode;
+		var message;
+		var details;
+
+		if (o && ('Message' in o)) {
+			message = o.Message;
+			delete o.Message;
+
+			if ('ErrorCode' in o) {
+				errorCode = o.ErrorCode;
+				delete o.ErrorCode;
+			}
+			else {
+				errorCode = getErrorCode(headers);
+			}
+
+			o.error = {
+				code: errorCode,
+				message: message,
+				details: o
+			};
+		}
+
+		return o;
+	}
+
+	function formatRequest(p, qs) {
+		// Move the access token from the request body to the request header
+		var token = qs.access_token;
+		delete qs.access_token;
+		p.headers.Authorization = 'Bearer ' + token;
+
+		// Format non-get requests to indicate json body
+		if (p.method !== 'get' && p.data) {
+			p.headers['Content-Type'] = 'application/json';
+			if (typeof (p.data) === 'object') {
+				p.data = JSON.stringify(p.data);
+			}
+		}
+
+		if (p.method === 'put') {
+			p.method = 'patch';
+		}
+
+		return true;
+	}
+
+	function getErrorCode(headers) {
+		switch (headers.statusCode) {
+			case 400:
+				return 'invalid_request';
+			case 403:
+				return 'stale_token';
+			case 401:
+				return 'invalid_token';
+			case 500:
+				return 'server_error';
+			default:
+				return 'server_error';
+		}
+	}
+
+}(hello));
+
+(function(hello) {
+
+	hello.init({
+
+		linkedin: {
+
+			oauth: {
+				version: 2,
+				response_type: 'code',
+				auth: 'https://www.linkedin.com/uas/oauth2/authorization',
+				grant: 'https://www.linkedin.com/uas/oauth2/accessToken'
+			},
+
+			// Refresh the access_token once expired
+			refresh: true,
+
+			scope: {
+				basic: 'r_basicprofile',
+				email: 'r_emailaddress',
+				friends: '',
+				publish: 'w_share'
+			},
+			scope_delim: ' ',
+
+			base: 'https://api.linkedin.com/v1/',
+
+			get: {
+				me: 'people/~:(picture-url,first-name,last-name,id,formatted-name,email-address)',
+				'me/friends': 'people/~/connections?count=@{limit|500}',
+				'me/followers': 'people/~/connections?count=@{limit|500}',
+				'me/following': 'people/~/connections?count=@{limit|500}',
+
+				// See: http://developer.linkedin.com/documents/get-network-updates-and-statistics-api
+				'me/share': 'people/~/network/updates?count=@{limit|250}'
+			},
+
+			post: {
+
+				// See: https://developer.linkedin.com/documents/api-requests-json
+				'me/share': function(p, callback) {
+					var data = {
+						visibility: {
+							code: 'anyone'
+						}
+					};
+
+					if (p.data.id) {
+
+						data.attribution = {
+							share: {
+								id: p.data.id
+							}
+						};
+
+					}
+					else {
+						data.comment = p.data.message;
+						if (p.data.picture && p.data.link) {
+							data.content = {
+								'submitted-url': p.data.link,
+								'submitted-image-url': p.data.picture
+							};
+						}
+					}
+
+					p.data = JSON.stringify(data);
+
+					callback('people/~/shares?format=json');
+				},
+
+				'me/like': like
+			},
+
+			del:{
+				'me/like': like
+			},
+
+			wrap: {
+				me: function(o) {
+					formatError(o);
+					formatUser(o);
+					return o;
+				},
+
+				'me/friends': formatFriends,
+				'me/following': formatFriends,
+				'me/followers': formatFriends,
+				'me/share': function(o) {
+					formatError(o);
+					paging(o);
+					if (o.values) {
+						o.data = o.values.map(formatUser);
+						o.data.forEach(function(item) {
+							item.message = item.headline;
+						});
+
+						delete o.values;
+					}
+
+					return o;
+				},
+
+				'default': function(o, headers) {
+					formatError(o);
+					empty(o, headers);
+					paging(o);
+				}
+			},
+
+			jsonp: function(p, qs) {
+				formatQuery(qs);
+				if (p.method === 'get') {
+					qs.format = 'jsonp';
+					qs['error-callback'] = p.callbackID;
+				}
+			},
+
+			xhr: function(p, qs) {
+				if (p.method !== 'get') {
+					formatQuery(qs);
+					p.headers['Content-Type'] = 'application/json';
+
+					// Note: x-li-format ensures error responses are not returned in XML
+					p.headers['x-li-format'] = 'json';
+					p.proxy = true;
+					return true;
+				}
+
+				return false;
+			}
+		}
+	});
+
+	function formatError(o) {
+		if (o && 'errorCode' in o) {
+			o.error = {
+				code: o.status,
+				message: o.message
+			};
+		}
+	}
+
+	function formatUser(o) {
+		if (o.error) {
+			return;
+		}
+
+		o.first_name = o.firstName;
+		o.last_name = o.lastName;
+		o.name = o.formattedName || (o.first_name + ' ' + o.last_name);
+		o.thumbnail = o.pictureUrl;
+		o.email = o.emailAddress;
+		return o;
+	}
+
+	function formatFriends(o) {
+		formatError(o);
+		paging(o);
+		if (o.values) {
+			o.data = o.values.map(formatUser);
+			delete o.values;
+		}
+
+		return o;
+	}
+
+	function paging(res) {
+		if ('_count' in res && '_start' in res && (res._count + res._start) < res._total) {
+			res.paging = {
+				next: '?start=' + (res._start + res._count) + '&count=' + res._count
+			};
+		}
+	}
+
+	function empty(o, headers) {
+		if (JSON.stringify(o) === '{}' && headers.statusCode === 200) {
+			o.success = true;
+		}
+	}
+
+	function formatQuery(qs) {
+		// LinkedIn signs requests with the parameter 'oauth2_access_token'
+		// ... yeah another one who thinks they should be different!
+		if (qs.access_token) {
+			qs.oauth2_access_token = qs.access_token;
+			delete qs.access_token;
+		}
+	}
+
+	function like(p, callback) {
+		p.headers['x-li-format'] = 'json';
+		var id = p.data.id;
+		p.data = (p.method !== 'delete').toString();
+		p.method = 'put';
+		callback('people/~/network/updates/key=' + id + '/is-liked');
+	}
+
+})(hello);
+
+// See: https://developers.soundcloud.com/docs/api/reference
+(function(hello) {
+
+	hello.init({
+
+		soundcloud: {
+			name: 'SoundCloud',
+
+			oauth: {
+				version: 2,
+				auth: 'https://soundcloud.com/connect',
+				grant: 'https://soundcloud.com/oauth2/token'
+			},
+
+			// Request path translated
+			base: 'https://api.soundcloud.com/',
+			get: {
+				me: 'me.json',
+
+				// Http://developers.soundcloud.com/docs/api/reference#me
+				'me/friends': 'me/followings.json',
+				'me/followers': 'me/followers.json',
+				'me/following': 'me/followings.json',
+
+				// See: http://developers.soundcloud.com/docs/api/reference#activities
+				'default': function(p, callback) {
+
+					// Include '.json at the end of each request'
+					callback(p.path + '.json');
+				}
+			},
+
+			// Response handlers
+			wrap: {
+				me: function(o) {
+					formatUser(o);
+					return o;
+				},
+
+				'default': function(o) {
+					if (Array.isArray(o)) {
+						o = {
+							data: o.map(formatUser)
+						};
+					}
+
+					paging(o);
+					return o;
+				}
+			},
+
+			xhr: formatRequest,
+			jsonp: formatRequest
+		}
+	});
+
+	function formatRequest(p, qs) {
+		// Alter the querystring
+		var token = qs.access_token;
+		delete qs.access_token;
+		qs.oauth_token = token;
+		qs['_status_code_map[302]'] = 200;
+		return true;
+	}
+
+	function formatUser(o) {
+		if (o.id) {
+			o.picture = o.avatar_url;
+			o.thumbnail = o.avatar_url;
+			o.name = o.username || o.full_name;
+		}
+
+		return o;
+	}
+
+	// See: http://developers.soundcloud.com/docs/api/reference#activities
+	function paging(res) {
+		if ('next_href' in res) {
+			res.paging = {
+				next: res.next_href
+			};
+		}
+	}
+
+})(hello);
+
+(function(hello) {
+
+	var base = 'https://api.twitter.com/';
+
+	hello.init({
+
+		twitter: {
+
+			// Ensure that you define an oauth_proxy
+			oauth: {
+				version: '1.0a',
+				auth: base + 'oauth/authenticate',
+				request: base + 'oauth/request_token',
+				token: base + 'oauth/access_token'
+			},
+
+			login: function(p) {
+				// Reauthenticate
+				// https://dev.twitter.com/oauth/reference/get/oauth/authenticate
+				var prefix = '?force_login=true';
+				this.oauth.auth = this.oauth.auth.replace(prefix, '') + (p.options.force ? prefix : '');
+			},
+
+			base: base + '1.1/',
+
+			get: {
+				me: 'account/verify_credentials.json',
+				'me/friends': 'friends/list.json?count=@{limit|200}',
+				'me/following': 'friends/list.json?count=@{limit|200}',
+				'me/followers': 'followers/list.json?count=@{limit|200}',
+
+				// Https://dev.twitter.com/docs/api/1.1/get/statuses/user_timeline
+				'me/share': 'statuses/user_timeline.json?count=@{limit|200}',
+
+				// Https://dev.twitter.com/rest/reference/get/favorites/list
+				'me/like': 'favorites/list.json?count=@{limit|200}'
+			},
+
+			post: {
+				'me/share': function(p, callback) {
+
+					var data = p.data;
+					p.data = null;
+
+					var status = [];
+
+					// Change message to status
+					if (data.message) {
+						status.push(data.message);
+						delete data.message;
+					}
+
+					// If link is given
+					if (data.link) {
+						status.push(data.link);
+						delete data.link;
+					}
+
+					if (data.picture) {
+						status.push(data.picture);
+						delete data.picture;
+					}
+
+					// Compound all the components
+					if (status.length) {
+						data.status = status.join(' ');
+					}
+
+					// Tweet media
+					if (data.file) {
+						data['media[]'] = data.file;
+						delete data.file;
+						p.data = data;
+						callback('statuses/update_with_media.json');
+					}
+
+					// Retweet?
+					else if ('id' in data) {
+						callback('statuses/retweet/' + data.id + '.json');
+					}
+
+					// Tweet
+					else {
+						// Assign the post body to the query parameters
+						hello.utils.extend(p.query, data);
+						callback('statuses/update.json?include_entities=1');
+					}
+				},
+
+				// See: https://dev.twitter.com/rest/reference/post/favorites/create
+				'me/like': function(p, callback) {
+					var id = p.data.id;
+					p.data = null;
+					callback('favorites/create.json?id=' + id);
+				}
+			},
+
+			del: {
+
+				// See: https://dev.twitter.com/rest/reference/post/favorites/destroy
+				'me/like': function() {
+					p.method = 'post';
+					var id = p.data.id;
+					p.data = null;
+					callback('favorites/destroy.json?id=' + id);
+				}
+			},
+
+			wrap: {
+				me: function(res) {
+					formatError(res);
+					formatUser(res);
+					return res;
+				},
+
+				'me/friends': formatFriends,
+				'me/followers': formatFriends,
+				'me/following': formatFriends,
+
+				'me/share': function(res) {
+					formatError(res);
+					paging(res);
+					if (!res.error && 'length' in res) {
+						return {data: res};
+					}
+
+					return res;
+				},
+
+				'default': function(res) {
+					res = arrayToDataResponse(res);
+					paging(res);
+					return res;
+				}
+			},
+			xhr: function(p) {
+
+				// Rely on the proxy for non-GET requests.
+				return (p.method !== 'get');
+			}
+		}
+	});
+
+	function formatUser(o) {
+		if (o.id) {
+			if (o.name) {
+				var m = o.name.split(' ');
+				o.first_name = m.shift();
+				o.last_name = m.join(' ');
+			}
+
+			// See: https://dev.twitter.com/overview/general/user-profile-images-and-banners
+			o.thumbnail = o.profile_image_url_https || o.profile_image_url;
+		}
+
+		return o;
+	}
+
+	function formatFriends(o) {
+		formatError(o);
+		paging(o);
+		if (o.users) {
+			o.data = o.users.map(formatUser);
+			delete o.users;
+		}
+
+		return o;
+	}
+
+	function formatError(o) {
+		if (o.errors) {
+			var e = o.errors[0];
+			o.error = {
+				code: 'request_failed',
+				message: e.message
+			};
+		}
+	}
+
+	// Take a cursor and add it to the path
+	function paging(res) {
+		// Does the response include a 'next_cursor_string'
+		if ('next_cursor_str' in res) {
+			// See: https://dev.twitter.com/docs/misc/cursoring
+			res.paging = {
+				next: '?cursor=' + res.next_cursor_str
+			};
+		}
+	}
+
+	function arrayToDataResponse(res) {
+		return Array.isArray(res) ? {data: res} : res;
+	}
+
+	/**
+	// The documentation says to define user in the request
+	// Although its not actually required.
+
+	var user_id;
+
+	function withUserId(callback){
+		if(user_id){
+			callback(user_id);
+		}
+		else{
+			hello.api('twitter:/me', function(o){
+				user_id = o.id;
+				callback(o.id);
+			});
+		}
+	}
+
+	function sign(url){
+		return function(p, callback){
+			withUserId(function(user_id){
+				callback(url+'?user_id='+user_id);
+			});
+		};
+	}
+	*/
+
+})(hello);
+
+// Vkontakte (vk.com)
+(function(hello) {
+
+	hello.init({
+
+		vk: {
+			name: 'Vk',
+
+			// See https://vk.com/dev/oauth_dialog
+			oauth: {
+				version: 2,
+				auth: 'https://oauth.vk.com/authorize',
+				grant: 'https://oauth.vk.com/access_token'
+			},
+
+			// Authorization scopes
+			scope: {
+				basic: '',
+				email: 'email',
+				offline_access: 'offline'
+			},
+
+			// Refresh the access_token
+			refresh: true,
+
+			login: function(p) {
+				p.qs.display = window.navigator &&
+					window.navigator.userAgent &&
+					/ipad|phone|phone|android/.test(window.navigator.userAgent.toLowerCase()) ? 'mobile' : 'popup';
+			},
+
+			// API Base URL
+			base: 'https://api.vk.com/method/',
+
+			// Map GET requests
+			get: {
+				me: function(p, callback) {
+					p.query.fields = 'id,first_name,last_name,photo_max';
+					callback('users.get');
+				}
+			},
+
+			wrap: {
+				me: function(res, headers, req) {
+					formatError(res);
+					return formatUser(res, req);
+				}
+			},
+
+			// No XHR
+			xhr: false,
+
+			// All requests should be JSONP as of missing CORS headers in https://api.vk.com/method/*
+			jsonp: true,
+
+			// No form
+			form: false
+		}
+	});
+
+	function formatUser(o, req) {
+
+		if (o !== null && 'response' in o && o.response !== null && o.response.length) {
+			o = o.response[0];
+			o.id = o.uid;
+			o.thumbnail = o.picture = o.photo_max;
+			o.name = o.first_name + ' ' + o.last_name;
+
+			if (req.authResponse && req.authResponse.email !== null)
+				o.email = req.authResponse.email;
+		}
+
+		return o;
+	}
+
+	function formatError(o) {
+
+		if (o.error) {
+			var e = o.error;
+			o.error = {
+				code: e.error_code,
+				message: e.error_msg
+			};
+		}
+	}
+
+})(hello);
+
+(function(hello) {
+
+	hello.init({
+		windows: {
+			name: 'Windows live',
+
+			// REF: http://msdn.microsoft.com/en-us/library/hh243641.aspx
+			oauth: {
+				version: 2,
+				auth: 'https://login.live.com/oauth20_authorize.srf',
+				grant: 'https://login.live.com/oauth20_token.srf'
+			},
+
+			// Refresh the access_token once expired
+			refresh: true,
+
+			logout: function() {
+				return 'http://login.live.com/oauth20_logout.srf?ts=' + (new Date()).getTime();
+			},
+
+			// Authorization scopes
+			scope: {
+				basic: 'wl.signin,wl.basic',
+				email: 'wl.emails',
+				birthday: 'wl.birthday',
+				events: 'wl.calendars',
+				photos: 'wl.photos',
+				videos: 'wl.photos',
+				friends: 'wl.contacts_emails',
+				files: 'wl.skydrive',
+				publish: 'wl.share',
+				publish_files: 'wl.skydrive_update',
+				create_event: 'wl.calendars_update,wl.events_create',
+				offline_access: 'wl.offline_access'
+			},
+
+			// API base URL
+			base: 'https://apis.live.net/v5.0/',
+
+			// Map GET requests
+			get: {
+
+				// Friends
+				me: 'me',
+				'me/friends': 'me/friends',
+				'me/following': 'me/contacts',
+				'me/followers': 'me/friends',
+				'me/contacts': 'me/contacts',
+
+				'me/albums': 'me/albums',
+
+				// Include the data[id] in the path
+				'me/album': '@{id}/files',
+				'me/photo': '@{id}',
+
+				// Files
+				'me/files': '@{parent|me/skydrive}/files',
+				'me/folders': '@{id|me/skydrive}/files',
+				'me/folder': '@{id|me/skydrive}/files'
+			},
+
+			// Map POST requests
+			post: {
+				'me/albums': 'me/albums',
+				'me/album': '@{id}/files/',
+
+				'me/folders': '@{id|me/skydrive/}',
+				'me/files': '@{parent|me/skydrive}/files'
+			},
+
+			// Map DELETE requests
+			del: {
+				// Include the data[id] in the path
+				'me/album': '@{id}',
+				'me/photo': '@{id}',
+				'me/folder': '@{id}',
+				'me/files': '@{id}'
+			},
+
+			wrap: {
+				me: formatUser,
+
+				'me/friends': formatFriends,
+				'me/contacts': formatFriends,
+				'me/followers': formatFriends,
+				'me/following': formatFriends,
+				'me/albums': formatAlbums,
+				'me/photos': formatDefault,
+				'default': formatDefault
+			},
+
+			xhr: function(p) {
+				if (p.method !== 'get' && p.method !== 'delete' && !hello.utils.hasBinary(p.data)) {
+
+					// Does this have a data-uri to upload as a file?
+					if (typeof (p.data.file) === 'string') {
+						p.data.file = hello.utils.toBlob(p.data.file);
+					}
+					else {
+						p.data = JSON.stringify(p.data);
+						p.headers = {
+							'Content-Type': 'application/json'
+						};
+					}
+				}
+
+				return true;
+			},
+
+			jsonp: function(p) {
+				if (p.method !== 'get' && !hello.utils.hasBinary(p.data)) {
+					p.data.method = p.method;
+					p.method = 'get';
+				}
+			}
+		}
+	});
+
+	function formatDefault(o) {
+		if ('data' in o) {
+			o.data.forEach(function(d) {
+				if (d.picture) {
+					d.thumbnail = d.picture;
+				}
+
+				if (d.images) {
+					d.pictures = d.images
+						.map(formatImage)
+						.sort(function(a, b) {
+							return a.width - b.width;
+						});
+				}
+			});
+		}
+
+		return o;
+	}
+
+	function formatImage(image) {
+		return {
+			width: image.width,
+			height: image.height,
+			source: image.source
+		};
+	}
+
+	function formatAlbums(o) {
+		if ('data' in o) {
+			o.data.forEach(function(d) {
+				d.photos = d.files = 'https://apis.live.net/v5.0/' + d.id + '/photos';
+			});
+		}
+
+		return o;
+	}
+
+	function formatUser(o, headers, req) {
+		if (o.id) {
+			var token = req.query.access_token;
+			if (o.emails) {
+				o.email = o.emails.preferred;
+			}
+
+			// If this is not an non-network friend
+			if (o.is_friend !== false) {
+				// Use the id of the user_id if available
+				var id = (o.user_id || o.id);
+				o.thumbnail = o.picture = 'https://apis.live.net/v5.0/' + id + '/picture?access_token=' + token;
+			}
+		}
+
+		return o;
+	}
+
+	function formatFriends(o, headers, req) {
+		if ('data' in o) {
+			o.data.forEach(function(d) {
+				formatUser(d, headers, req);
+			});
+		}
+
+		return o;
+	}
+
+})(hello);
+
+(function(hello) {
+
+	hello.init({
+
+		yahoo: {
+
+			// Ensure that you define an oauth_proxy
+			oauth: {
+				version: '1.0a',
+				auth: 'https://api.login.yahoo.com/oauth/v2/request_auth',
+				request: 'https://api.login.yahoo.com/oauth/v2/get_request_token',
+				token: 'https://api.login.yahoo.com/oauth/v2/get_token'
+			},
+
+			// Login handler
+			login: function(p) {
+				// Change the default popup window to be at least 560
+				// Yahoo does dynamically change it on the fly for the signin screen (only, what if your already signed in)
+				p.options.popup.width = 560;
+
+				// Yahoo throws an parameter error if for whatever reason the state.scope contains a comma, so lets remove scope
+				try {delete p.qs.state.scope;}
+				catch (e) {}
+			},
+
+			base: 'https://social.yahooapis.com/v1/',
+
+			get: {
+				me: yql('select * from social.profile(0) where guid=me'),
+				'me/friends': yql('select * from social.contacts(0) where guid=me'),
+				'me/following': yql('select * from social.contacts(0) where guid=me')
+			},
+			wrap: {
+				me: formatUser,
+
+				// Can't get IDs
+				// It might be better to loop through the social.relationship table with has unique IDs of users.
+				'me/friends': formatFriends,
+				'me/following': formatFriends,
+				'default': paging
+			}
+		}
+	});
+
+	/*
+		// Auto-refresh fix: bug in Yahoo can't get this to work with node-oauth-shim
+		login : function(o){
+			// Is the user already logged in
+			var auth = hello('yahoo').getAuthResponse();
+
+			// Is this a refresh token?
+			if(o.options.display==='none'&&auth&&auth.access_token&&auth.refresh_token){
+				// Add the old token and the refresh token, including path to the query
+				// See http://developer.yahoo.com/oauth/guide/oauth-refreshaccesstoken.html
+				o.qs.access_token = auth.access_token;
+				o.qs.refresh_token = auth.refresh_token;
+				o.qs.token_url = 'https://api.login.yahoo.com/oauth/v2/get_token';
+			}
+		},
+	*/
+
+	function formatError(o) {
+		if (o && 'meta' in o && 'error_type' in o.meta) {
+			o.error = {
+				code: o.meta.error_type,
+				message: o.meta.error_message
+			};
+		}
+	}
+
+	function formatUser(o) {
+
+		formatError(o);
+		if (o.query && o.query.results && o.query.results.profile) {
+			o = o.query.results.profile;
+			o.id = o.guid;
+			o.last_name = o.familyName;
+			o.first_name = o.givenName || o.nickname;
+			var a = [];
+			if (o.first_name) {
+				a.push(o.first_name);
+			}
+
+			if (o.last_name) {
+				a.push(o.last_name);
+			}
+
+			o.name = a.join(' ');
+			o.email = (o.emails && o.emails[0]) ? o.emails[0].handle : null;
+			o.thumbnail = o.image ? o.image.imageUrl : null;
+		}
+
+		return o;
+	}
+
+	function formatFriends(o, headers, request) {
+		formatError(o);
+		paging(o, headers, request);
+		var contact;
+		var field;
+		if (o.query && o.query.results && o.query.results.contact) {
+			o.data = o.query.results.contact;
+			delete o.query;
+
+			if (!Array.isArray(o.data)) {
+				o.data = [o.data];
+			}
+
+			o.data.forEach(formatFriend);
+		}
+
+		return o;
+	}
+
+	function formatFriend(contact) {
+		contact.id = null;
+		(contact.fields || []).forEach(function(field) {
+			if (field.type === 'email') {
+				contact.email = field.value;
+			}
+
+			if (field.type === 'name') {
+				contact.first_name = field.value.givenName;
+				contact.last_name = field.value.familyName;
+				contact.name = field.value.givenName + ' ' + field.value.familyName;
+			}
+
+			if (field.type === 'yahooid') {
+				contact.id = field.value;
+			}
+		});
+	}
+
+	function paging(res, headers, request) {
+
+		// See: http://developer.yahoo.com/yql/guide/paging.html#local_limits
+		if (res.query && res.query.count && request.options) {
+			res.paging = {
+				next: '?start=' + (res.query.count + (+request.options.start || 1))
+			};
+		}
+
+		return res;
+	}
+
+	function yql(q) {
+		return 'https://query.yahooapis.com/v1/yql?q=' + (q + ' limit @{limit|100} offset @{start|0}').replace(/\s/g, '%20') + '&format=json';
+	}
+
+})(hello);
+
+// Register as anonymous AMD module
+if (typeof define === 'function' && define.amd) {
+	define(function() {
+		return hello;
+	});
+}
+
+// CommonJS module for browserify
+if (typeof module === 'object' && module.exports) {
+	module.exports = hello;
+}
+
+}).call(this,require('_process'))
+
+},{"_process":1}],3:[function(require,module,exports){
 'use strict';
 
 module.exports = require('react/lib/ReactDOM');
 
-},{"react/lib/ReactDOM":37}],3:[function(require,module,exports){
+},{"react/lib/ReactDOM":38}],4:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -133,7 +5892,7 @@ var AutoFocusUtils = {
 };
 
 module.exports = AutoFocusUtils;
-},{"./ReactMount":67,"./findDOMNode":110,"fbjs/lib/focusNode":140}],4:[function(require,module,exports){
+},{"./ReactMount":68,"./findDOMNode":111,"fbjs/lib/focusNode":141}],5:[function(require,module,exports){
 /**
  * Copyright 2013-2015 Facebook, Inc.
  * All rights reserved.
@@ -539,7 +6298,7 @@ var BeforeInputEventPlugin = {
 };
 
 module.exports = BeforeInputEventPlugin;
-},{"./EventConstants":16,"./EventPropagators":20,"./FallbackCompositionState":21,"./SyntheticCompositionEvent":92,"./SyntheticInputEvent":96,"fbjs/lib/ExecutionEnvironment":132,"fbjs/lib/keyOf":150}],5:[function(require,module,exports){
+},{"./EventConstants":17,"./EventPropagators":21,"./FallbackCompositionState":22,"./SyntheticCompositionEvent":93,"./SyntheticInputEvent":97,"fbjs/lib/ExecutionEnvironment":133,"fbjs/lib/keyOf":151}],6:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -679,7 +6438,7 @@ var CSSProperty = {
 };
 
 module.exports = CSSProperty;
-},{}],6:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -858,7 +6617,7 @@ ReactPerf.measureMethods(CSSPropertyOperations, 'CSSPropertyOperations', {
 module.exports = CSSPropertyOperations;
 }).call(this,require('_process'))
 
-},{"./CSSProperty":5,"./ReactPerf":73,"./dangerousStyleValue":107,"_process":1,"fbjs/lib/ExecutionEnvironment":132,"fbjs/lib/camelizeStyleName":134,"fbjs/lib/hyphenateStyleName":145,"fbjs/lib/memoizeStringOnly":152,"fbjs/lib/warning":157}],7:[function(require,module,exports){
+},{"./CSSProperty":6,"./ReactPerf":74,"./dangerousStyleValue":108,"_process":1,"fbjs/lib/ExecutionEnvironment":133,"fbjs/lib/camelizeStyleName":135,"fbjs/lib/hyphenateStyleName":146,"fbjs/lib/memoizeStringOnly":153,"fbjs/lib/warning":158}],8:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -955,7 +6714,7 @@ PooledClass.addPoolingTo(CallbackQueue);
 module.exports = CallbackQueue;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"./PooledClass":25,"_process":1,"fbjs/lib/invariant":146}],8:[function(require,module,exports){
+},{"./Object.assign":25,"./PooledClass":26,"_process":1,"fbjs/lib/invariant":147}],9:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -1277,7 +7036,7 @@ var ChangeEventPlugin = {
 };
 
 module.exports = ChangeEventPlugin;
-},{"./EventConstants":16,"./EventPluginHub":17,"./EventPropagators":20,"./ReactUpdates":85,"./SyntheticEvent":94,"./getEventTarget":116,"./isEventSupported":121,"./isTextInputElement":122,"fbjs/lib/ExecutionEnvironment":132,"fbjs/lib/keyOf":150}],9:[function(require,module,exports){
+},{"./EventConstants":17,"./EventPluginHub":18,"./EventPropagators":21,"./ReactUpdates":86,"./SyntheticEvent":95,"./getEventTarget":117,"./isEventSupported":122,"./isTextInputElement":123,"fbjs/lib/ExecutionEnvironment":133,"fbjs/lib/keyOf":151}],10:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -1301,7 +7060,7 @@ var ClientReactRootIndex = {
 };
 
 module.exports = ClientReactRootIndex;
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -1434,7 +7193,7 @@ ReactPerf.measureMethods(DOMChildrenOperations, 'DOMChildrenOperations', {
 module.exports = DOMChildrenOperations;
 }).call(this,require('_process'))
 
-},{"./Danger":13,"./ReactMultiChildUpdateTypes":69,"./ReactPerf":73,"./setInnerHTML":126,"./setTextContent":127,"_process":1,"fbjs/lib/invariant":146}],11:[function(require,module,exports){
+},{"./Danger":14,"./ReactMultiChildUpdateTypes":70,"./ReactPerf":74,"./setInnerHTML":127,"./setTextContent":128,"_process":1,"fbjs/lib/invariant":147}],12:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -1672,7 +7431,7 @@ var DOMProperty = {
 module.exports = DOMProperty;
 }).call(this,require('_process'))
 
-},{"_process":1,"fbjs/lib/invariant":146}],12:[function(require,module,exports){
+},{"_process":1,"fbjs/lib/invariant":147}],13:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -1901,7 +7660,7 @@ ReactPerf.measureMethods(DOMPropertyOperations, 'DOMPropertyOperations', {
 module.exports = DOMPropertyOperations;
 }).call(this,require('_process'))
 
-},{"./DOMProperty":11,"./ReactPerf":73,"./quoteAttributeValueForBrowser":124,"_process":1,"fbjs/lib/warning":157}],13:[function(require,module,exports){
+},{"./DOMProperty":12,"./ReactPerf":74,"./quoteAttributeValueForBrowser":125,"_process":1,"fbjs/lib/warning":158}],14:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -2050,7 +7809,7 @@ var Danger = {
 module.exports = Danger;
 }).call(this,require('_process'))
 
-},{"_process":1,"fbjs/lib/ExecutionEnvironment":132,"fbjs/lib/createNodesFromMarkup":137,"fbjs/lib/emptyFunction":138,"fbjs/lib/getMarkupWrap":142,"fbjs/lib/invariant":146}],14:[function(require,module,exports){
+},{"_process":1,"fbjs/lib/ExecutionEnvironment":133,"fbjs/lib/createNodesFromMarkup":138,"fbjs/lib/emptyFunction":139,"fbjs/lib/getMarkupWrap":143,"fbjs/lib/invariant":147}],15:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -2078,7 +7837,7 @@ var keyOf = require('fbjs/lib/keyOf');
 var DefaultEventPluginOrder = [keyOf({ ResponderEventPlugin: null }), keyOf({ SimpleEventPlugin: null }), keyOf({ TapEventPlugin: null }), keyOf({ EnterLeaveEventPlugin: null }), keyOf({ ChangeEventPlugin: null }), keyOf({ SelectEventPlugin: null }), keyOf({ BeforeInputEventPlugin: null })];
 
 module.exports = DefaultEventPluginOrder;
-},{"fbjs/lib/keyOf":150}],15:[function(require,module,exports){
+},{"fbjs/lib/keyOf":151}],16:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -2203,7 +7962,7 @@ var EnterLeaveEventPlugin = {
 };
 
 module.exports = EnterLeaveEventPlugin;
-},{"./EventConstants":16,"./EventPropagators":20,"./ReactMount":67,"./SyntheticMouseEvent":98,"fbjs/lib/keyOf":150}],16:[function(require,module,exports){
+},{"./EventConstants":17,"./EventPropagators":21,"./ReactMount":68,"./SyntheticMouseEvent":99,"fbjs/lib/keyOf":151}],17:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -2296,7 +8055,7 @@ var EventConstants = {
 };
 
 module.exports = EventConstants;
-},{"fbjs/lib/keyMirror":149}],17:[function(require,module,exports){
+},{"fbjs/lib/keyMirror":150}],18:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -2579,7 +8338,7 @@ var EventPluginHub = {
 module.exports = EventPluginHub;
 }).call(this,require('_process'))
 
-},{"./EventPluginRegistry":18,"./EventPluginUtils":19,"./ReactErrorUtils":58,"./accumulateInto":104,"./forEachAccumulated":112,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],18:[function(require,module,exports){
+},{"./EventPluginRegistry":19,"./EventPluginUtils":20,"./ReactErrorUtils":59,"./accumulateInto":105,"./forEachAccumulated":113,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],19:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -2803,7 +8562,7 @@ var EventPluginRegistry = {
 module.exports = EventPluginRegistry;
 }).call(this,require('_process'))
 
-},{"_process":1,"fbjs/lib/invariant":146}],19:[function(require,module,exports){
+},{"_process":1,"fbjs/lib/invariant":147}],20:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -3009,7 +8768,7 @@ var EventPluginUtils = {
 module.exports = EventPluginUtils;
 }).call(this,require('_process'))
 
-},{"./EventConstants":16,"./ReactErrorUtils":58,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],20:[function(require,module,exports){
+},{"./EventConstants":17,"./ReactErrorUtils":59,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],21:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -3148,7 +8907,7 @@ var EventPropagators = {
 module.exports = EventPropagators;
 }).call(this,require('_process'))
 
-},{"./EventConstants":16,"./EventPluginHub":17,"./accumulateInto":104,"./forEachAccumulated":112,"_process":1,"fbjs/lib/warning":157}],21:[function(require,module,exports){
+},{"./EventConstants":17,"./EventPluginHub":18,"./accumulateInto":105,"./forEachAccumulated":113,"_process":1,"fbjs/lib/warning":158}],22:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -3244,7 +9003,7 @@ assign(FallbackCompositionState.prototype, {
 PooledClass.addPoolingTo(FallbackCompositionState);
 
 module.exports = FallbackCompositionState;
-},{"./Object.assign":24,"./PooledClass":25,"./getTextContentAccessor":119}],22:[function(require,module,exports){
+},{"./Object.assign":25,"./PooledClass":26,"./getTextContentAccessor":120}],23:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -3477,7 +9236,7 @@ var HTMLDOMPropertyConfig = {
 };
 
 module.exports = HTMLDOMPropertyConfig;
-},{"./DOMProperty":11,"fbjs/lib/ExecutionEnvironment":132}],23:[function(require,module,exports){
+},{"./DOMProperty":12,"fbjs/lib/ExecutionEnvironment":133}],24:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -3615,7 +9374,7 @@ var LinkedValueUtils = {
 module.exports = LinkedValueUtils;
 }).call(this,require('_process'))
 
-},{"./ReactPropTypeLocations":75,"./ReactPropTypes":76,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],24:[function(require,module,exports){
+},{"./ReactPropTypeLocations":76,"./ReactPropTypes":77,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],25:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -3663,7 +9422,7 @@ function assign(target, sources) {
 }
 
 module.exports = assign;
-},{}],25:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -3786,7 +9545,7 @@ var PooledClass = {
 module.exports = PooledClass;
 }).call(this,require('_process'))
 
-},{"_process":1,"fbjs/lib/invariant":146}],26:[function(require,module,exports){
+},{"_process":1,"fbjs/lib/invariant":147}],27:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -3827,7 +9586,7 @@ React.__SECRET_DOM_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = ReactDOM;
 React.__SECRET_DOM_SERVER_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = ReactDOMServer;
 
 module.exports = React;
-},{"./Object.assign":24,"./ReactDOM":37,"./ReactDOMServer":47,"./ReactIsomorphic":65,"./deprecated":108}],27:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactDOM":38,"./ReactDOMServer":48,"./ReactIsomorphic":66,"./deprecated":109}],28:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -3867,7 +9626,7 @@ var ReactBrowserComponentMixin = {
 module.exports = ReactBrowserComponentMixin;
 }).call(this,require('_process'))
 
-},{"./ReactInstanceMap":64,"./findDOMNode":110,"_process":1,"fbjs/lib/warning":157}],28:[function(require,module,exports){
+},{"./ReactInstanceMap":65,"./findDOMNode":111,"_process":1,"fbjs/lib/warning":158}],29:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -4192,7 +9951,7 @@ ReactPerf.measureMethods(ReactBrowserEventEmitter, 'ReactBrowserEventEmitter', {
 });
 
 module.exports = ReactBrowserEventEmitter;
-},{"./EventConstants":16,"./EventPluginHub":17,"./EventPluginRegistry":18,"./Object.assign":24,"./ReactEventEmitterMixin":59,"./ReactPerf":73,"./ViewportMetrics":103,"./isEventSupported":121}],29:[function(require,module,exports){
+},{"./EventConstants":17,"./EventPluginHub":18,"./EventPluginRegistry":19,"./Object.assign":25,"./ReactEventEmitterMixin":60,"./ReactPerf":74,"./ViewportMetrics":104,"./isEventSupported":122}],30:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -4318,7 +10077,7 @@ var ReactChildReconciler = {
 module.exports = ReactChildReconciler;
 }).call(this,require('_process'))
 
-},{"./ReactReconciler":78,"./instantiateReactComponent":120,"./shouldUpdateReactComponent":128,"./traverseAllChildren":129,"_process":1,"fbjs/lib/warning":157}],30:[function(require,module,exports){
+},{"./ReactReconciler":79,"./instantiateReactComponent":121,"./shouldUpdateReactComponent":129,"./traverseAllChildren":130,"_process":1,"fbjs/lib/warning":158}],31:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -4501,7 +10260,7 @@ var ReactChildren = {
 };
 
 module.exports = ReactChildren;
-},{"./PooledClass":25,"./ReactElement":54,"./traverseAllChildren":129,"fbjs/lib/emptyFunction":138}],31:[function(require,module,exports){
+},{"./PooledClass":26,"./ReactElement":55,"./traverseAllChildren":130,"fbjs/lib/emptyFunction":139}],32:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -5276,7 +11035,7 @@ var ReactClass = {
 module.exports = ReactClass;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"./ReactComponent":32,"./ReactElement":54,"./ReactNoopUpdateQueue":71,"./ReactPropTypeLocationNames":74,"./ReactPropTypeLocations":75,"_process":1,"fbjs/lib/emptyObject":139,"fbjs/lib/invariant":146,"fbjs/lib/keyMirror":149,"fbjs/lib/keyOf":150,"fbjs/lib/warning":157}],32:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactComponent":33,"./ReactElement":55,"./ReactNoopUpdateQueue":72,"./ReactPropTypeLocationNames":75,"./ReactPropTypeLocations":76,"_process":1,"fbjs/lib/emptyObject":140,"fbjs/lib/invariant":147,"fbjs/lib/keyMirror":150,"fbjs/lib/keyOf":151,"fbjs/lib/warning":158}],33:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -5402,7 +11161,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = ReactComponent;
 }).call(this,require('_process'))
 
-},{"./ReactNoopUpdateQueue":71,"./canDefineProperty":106,"_process":1,"fbjs/lib/emptyObject":139,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],33:[function(require,module,exports){
+},{"./ReactNoopUpdateQueue":72,"./canDefineProperty":107,"_process":1,"fbjs/lib/emptyObject":140,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],34:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -5444,7 +11203,7 @@ var ReactComponentBrowserEnvironment = {
 };
 
 module.exports = ReactComponentBrowserEnvironment;
-},{"./ReactDOMIDOperations":42,"./ReactMount":67}],34:[function(require,module,exports){
+},{"./ReactDOMIDOperations":43,"./ReactMount":68}],35:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -5499,7 +11258,7 @@ var ReactComponentEnvironment = {
 module.exports = ReactComponentEnvironment;
 }).call(this,require('_process'))
 
-},{"_process":1,"fbjs/lib/invariant":146}],35:[function(require,module,exports){
+},{"_process":1,"fbjs/lib/invariant":147}],36:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -6197,7 +11956,7 @@ var ReactCompositeComponent = {
 module.exports = ReactCompositeComponent;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"./ReactComponentEnvironment":34,"./ReactCurrentOwner":36,"./ReactElement":54,"./ReactInstanceMap":64,"./ReactPerf":73,"./ReactPropTypeLocationNames":74,"./ReactPropTypeLocations":75,"./ReactReconciler":78,"./ReactUpdateQueue":84,"./shouldUpdateReactComponent":128,"_process":1,"fbjs/lib/emptyObject":139,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],36:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactComponentEnvironment":35,"./ReactCurrentOwner":37,"./ReactElement":55,"./ReactInstanceMap":65,"./ReactPerf":74,"./ReactPropTypeLocationNames":75,"./ReactPropTypeLocations":76,"./ReactReconciler":79,"./ReactUpdateQueue":85,"./shouldUpdateReactComponent":129,"_process":1,"fbjs/lib/emptyObject":140,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],37:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -6228,7 +11987,7 @@ var ReactCurrentOwner = {
 };
 
 module.exports = ReactCurrentOwner;
-},{}],37:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -6324,7 +12083,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = React;
 }).call(this,require('_process'))
 
-},{"./ReactCurrentOwner":36,"./ReactDOMTextComponent":48,"./ReactDefaultInjection":51,"./ReactInstanceHandles":63,"./ReactMount":67,"./ReactPerf":73,"./ReactReconciler":78,"./ReactUpdates":85,"./ReactVersion":86,"./findDOMNode":110,"./renderSubtreeIntoContainer":125,"_process":1,"fbjs/lib/ExecutionEnvironment":132,"fbjs/lib/warning":157}],38:[function(require,module,exports){
+},{"./ReactCurrentOwner":37,"./ReactDOMTextComponent":49,"./ReactDefaultInjection":52,"./ReactInstanceHandles":64,"./ReactMount":68,"./ReactPerf":74,"./ReactReconciler":79,"./ReactUpdates":86,"./ReactVersion":87,"./findDOMNode":111,"./renderSubtreeIntoContainer":126,"_process":1,"fbjs/lib/ExecutionEnvironment":133,"fbjs/lib/warning":158}],39:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -6375,7 +12134,7 @@ var ReactDOMButton = {
 };
 
 module.exports = ReactDOMButton;
-},{}],39:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -7341,7 +13100,7 @@ assign(ReactDOMComponent.prototype, ReactDOMComponent.Mixin, ReactMultiChild.Mix
 module.exports = ReactDOMComponent;
 }).call(this,require('_process'))
 
-},{"./AutoFocusUtils":3,"./CSSPropertyOperations":6,"./DOMProperty":11,"./DOMPropertyOperations":12,"./EventConstants":16,"./Object.assign":24,"./ReactBrowserEventEmitter":28,"./ReactComponentBrowserEnvironment":33,"./ReactDOMButton":38,"./ReactDOMInput":43,"./ReactDOMOption":44,"./ReactDOMSelect":45,"./ReactDOMTextarea":49,"./ReactMount":67,"./ReactMultiChild":68,"./ReactPerf":73,"./ReactUpdateQueue":84,"./canDefineProperty":106,"./escapeTextContentForBrowser":109,"./isEventSupported":121,"./setInnerHTML":126,"./setTextContent":127,"./validateDOMNesting":130,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/keyOf":150,"fbjs/lib/shallowEqual":155,"fbjs/lib/warning":157}],40:[function(require,module,exports){
+},{"./AutoFocusUtils":4,"./CSSPropertyOperations":7,"./DOMProperty":12,"./DOMPropertyOperations":13,"./EventConstants":17,"./Object.assign":25,"./ReactBrowserEventEmitter":29,"./ReactComponentBrowserEnvironment":34,"./ReactDOMButton":39,"./ReactDOMInput":44,"./ReactDOMOption":45,"./ReactDOMSelect":46,"./ReactDOMTextarea":50,"./ReactMount":68,"./ReactMultiChild":69,"./ReactPerf":74,"./ReactUpdateQueue":85,"./canDefineProperty":107,"./escapeTextContentForBrowser":110,"./isEventSupported":122,"./setInnerHTML":127,"./setTextContent":128,"./validateDOMNesting":131,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/keyOf":151,"fbjs/lib/shallowEqual":156,"fbjs/lib/warning":158}],41:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -7522,7 +13281,7 @@ var ReactDOMFactories = mapObject({
 module.exports = ReactDOMFactories;
 }).call(this,require('_process'))
 
-},{"./ReactElement":54,"./ReactElementValidator":55,"_process":1,"fbjs/lib/mapObject":151}],41:[function(require,module,exports){
+},{"./ReactElement":55,"./ReactElementValidator":56,"_process":1,"fbjs/lib/mapObject":152}],42:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -7541,7 +13300,7 @@ var ReactDOMFeatureFlags = {
 };
 
 module.exports = ReactDOMFeatureFlags;
-},{}],42:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -7639,7 +13398,7 @@ ReactPerf.measureMethods(ReactDOMIDOperations, 'ReactDOMIDOperations', {
 module.exports = ReactDOMIDOperations;
 }).call(this,require('_process'))
 
-},{"./DOMChildrenOperations":10,"./DOMPropertyOperations":12,"./ReactMount":67,"./ReactPerf":73,"_process":1,"fbjs/lib/invariant":146}],43:[function(require,module,exports){
+},{"./DOMChildrenOperations":11,"./DOMPropertyOperations":13,"./ReactMount":68,"./ReactPerf":74,"_process":1,"fbjs/lib/invariant":147}],44:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -7796,7 +13555,7 @@ function _handleChange(event) {
 module.exports = ReactDOMInput;
 }).call(this,require('_process'))
 
-},{"./LinkedValueUtils":23,"./Object.assign":24,"./ReactDOMIDOperations":42,"./ReactMount":67,"./ReactUpdates":85,"_process":1,"fbjs/lib/invariant":146}],44:[function(require,module,exports){
+},{"./LinkedValueUtils":24,"./Object.assign":25,"./ReactDOMIDOperations":43,"./ReactMount":68,"./ReactUpdates":86,"_process":1,"fbjs/lib/invariant":147}],45:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -7886,7 +13645,7 @@ var ReactDOMOption = {
 module.exports = ReactDOMOption;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"./ReactChildren":30,"./ReactDOMSelect":45,"_process":1,"fbjs/lib/warning":157}],45:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactChildren":31,"./ReactDOMSelect":46,"_process":1,"fbjs/lib/warning":158}],46:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -8078,7 +13837,7 @@ function _handleChange(event) {
 module.exports = ReactDOMSelect;
 }).call(this,require('_process'))
 
-},{"./LinkedValueUtils":23,"./Object.assign":24,"./ReactMount":67,"./ReactUpdates":85,"_process":1,"fbjs/lib/warning":157}],46:[function(require,module,exports){
+},{"./LinkedValueUtils":24,"./Object.assign":25,"./ReactMount":68,"./ReactUpdates":86,"_process":1,"fbjs/lib/warning":158}],47:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -8291,7 +14050,7 @@ var ReactDOMSelection = {
 };
 
 module.exports = ReactDOMSelection;
-},{"./getNodeForCharacterOffset":118,"./getTextContentAccessor":119,"fbjs/lib/ExecutionEnvironment":132}],47:[function(require,module,exports){
+},{"./getNodeForCharacterOffset":119,"./getTextContentAccessor":120,"fbjs/lib/ExecutionEnvironment":133}],48:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -8318,7 +14077,7 @@ var ReactDOMServer = {
 };
 
 module.exports = ReactDOMServer;
-},{"./ReactDefaultInjection":51,"./ReactServerRendering":82,"./ReactVersion":86}],48:[function(require,module,exports){
+},{"./ReactDefaultInjection":52,"./ReactServerRendering":83,"./ReactVersion":87}],49:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -8449,7 +14208,7 @@ assign(ReactDOMTextComponent.prototype, {
 module.exports = ReactDOMTextComponent;
 }).call(this,require('_process'))
 
-},{"./DOMChildrenOperations":10,"./DOMPropertyOperations":12,"./Object.assign":24,"./ReactComponentBrowserEnvironment":33,"./ReactMount":67,"./escapeTextContentForBrowser":109,"./setTextContent":127,"./validateDOMNesting":130,"_process":1}],49:[function(require,module,exports){
+},{"./DOMChildrenOperations":11,"./DOMPropertyOperations":13,"./Object.assign":25,"./ReactComponentBrowserEnvironment":34,"./ReactMount":68,"./escapeTextContentForBrowser":110,"./setTextContent":128,"./validateDOMNesting":131,"_process":1}],50:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -8566,7 +14325,7 @@ function _handleChange(event) {
 module.exports = ReactDOMTextarea;
 }).call(this,require('_process'))
 
-},{"./LinkedValueUtils":23,"./Object.assign":24,"./ReactDOMIDOperations":42,"./ReactUpdates":85,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],50:[function(require,module,exports){
+},{"./LinkedValueUtils":24,"./Object.assign":25,"./ReactDOMIDOperations":43,"./ReactUpdates":86,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],51:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -8634,7 +14393,7 @@ var ReactDefaultBatchingStrategy = {
 };
 
 module.exports = ReactDefaultBatchingStrategy;
-},{"./Object.assign":24,"./ReactUpdates":85,"./Transaction":102,"fbjs/lib/emptyFunction":138}],51:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactUpdates":86,"./Transaction":103,"fbjs/lib/emptyFunction":139}],52:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -8735,7 +14494,7 @@ module.exports = {
 };
 }).call(this,require('_process'))
 
-},{"./BeforeInputEventPlugin":4,"./ChangeEventPlugin":8,"./ClientReactRootIndex":9,"./DefaultEventPluginOrder":14,"./EnterLeaveEventPlugin":15,"./HTMLDOMPropertyConfig":22,"./ReactBrowserComponentMixin":27,"./ReactComponentBrowserEnvironment":33,"./ReactDOMComponent":39,"./ReactDOMTextComponent":48,"./ReactDefaultBatchingStrategy":50,"./ReactDefaultPerf":52,"./ReactEventListener":60,"./ReactInjection":61,"./ReactInstanceHandles":63,"./ReactMount":67,"./ReactReconcileTransaction":77,"./SVGDOMPropertyConfig":87,"./SelectEventPlugin":88,"./ServerReactRootIndex":89,"./SimpleEventPlugin":90,"_process":1,"fbjs/lib/ExecutionEnvironment":132}],52:[function(require,module,exports){
+},{"./BeforeInputEventPlugin":5,"./ChangeEventPlugin":9,"./ClientReactRootIndex":10,"./DefaultEventPluginOrder":15,"./EnterLeaveEventPlugin":16,"./HTMLDOMPropertyConfig":23,"./ReactBrowserComponentMixin":28,"./ReactComponentBrowserEnvironment":34,"./ReactDOMComponent":40,"./ReactDOMTextComponent":49,"./ReactDefaultBatchingStrategy":51,"./ReactDefaultPerf":53,"./ReactEventListener":61,"./ReactInjection":62,"./ReactInstanceHandles":64,"./ReactMount":68,"./ReactReconcileTransaction":78,"./SVGDOMPropertyConfig":88,"./SelectEventPlugin":89,"./ServerReactRootIndex":90,"./SimpleEventPlugin":91,"_process":1,"fbjs/lib/ExecutionEnvironment":133}],53:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -8973,7 +14732,7 @@ var ReactDefaultPerf = {
 };
 
 module.exports = ReactDefaultPerf;
-},{"./DOMProperty":11,"./ReactDefaultPerfAnalysis":53,"./ReactMount":67,"./ReactPerf":73,"fbjs/lib/performanceNow":154}],53:[function(require,module,exports){
+},{"./DOMProperty":12,"./ReactDefaultPerfAnalysis":54,"./ReactMount":68,"./ReactPerf":74,"fbjs/lib/performanceNow":155}],54:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -9173,7 +14932,7 @@ var ReactDefaultPerfAnalysis = {
 };
 
 module.exports = ReactDefaultPerfAnalysis;
-},{"./Object.assign":24}],54:[function(require,module,exports){
+},{"./Object.assign":25}],55:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -9424,7 +15183,7 @@ ReactElement.isValidElement = function (object) {
 module.exports = ReactElement;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"./ReactCurrentOwner":36,"./canDefineProperty":106,"_process":1}],55:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactCurrentOwner":37,"./canDefineProperty":107,"_process":1}],56:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -9709,7 +15468,7 @@ var ReactElementValidator = {
 module.exports = ReactElementValidator;
 }).call(this,require('_process'))
 
-},{"./ReactCurrentOwner":36,"./ReactElement":54,"./ReactPropTypeLocationNames":74,"./ReactPropTypeLocations":75,"./canDefineProperty":106,"./getIteratorFn":117,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],56:[function(require,module,exports){
+},{"./ReactCurrentOwner":37,"./ReactElement":55,"./ReactPropTypeLocationNames":75,"./ReactPropTypeLocations":76,"./canDefineProperty":107,"./getIteratorFn":118,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],57:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -9761,7 +15520,7 @@ assign(ReactEmptyComponent.prototype, {
 ReactEmptyComponent.injection = ReactEmptyComponentInjection;
 
 module.exports = ReactEmptyComponent;
-},{"./Object.assign":24,"./ReactElement":54,"./ReactEmptyComponentRegistry":57,"./ReactReconciler":78}],57:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactElement":55,"./ReactEmptyComponentRegistry":58,"./ReactReconciler":79}],58:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -9810,7 +15569,7 @@ var ReactEmptyComponentRegistry = {
 };
 
 module.exports = ReactEmptyComponentRegistry;
-},{}],58:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -9891,7 +15650,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = ReactErrorUtils;
 }).call(this,require('_process'))
 
-},{"_process":1}],59:[function(require,module,exports){
+},{"_process":1}],60:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -9930,7 +15689,7 @@ var ReactEventEmitterMixin = {
 };
 
 module.exports = ReactEventEmitterMixin;
-},{"./EventPluginHub":17}],60:[function(require,module,exports){
+},{"./EventPluginHub":18}],61:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -10142,7 +15901,7 @@ var ReactEventListener = {
 };
 
 module.exports = ReactEventListener;
-},{"./Object.assign":24,"./PooledClass":25,"./ReactInstanceHandles":63,"./ReactMount":67,"./ReactUpdates":85,"./getEventTarget":116,"fbjs/lib/EventListener":131,"fbjs/lib/ExecutionEnvironment":132,"fbjs/lib/getUnboundedScrollPosition":143}],61:[function(require,module,exports){
+},{"./Object.assign":25,"./PooledClass":26,"./ReactInstanceHandles":64,"./ReactMount":68,"./ReactUpdates":86,"./getEventTarget":117,"fbjs/lib/EventListener":132,"fbjs/lib/ExecutionEnvironment":133,"fbjs/lib/getUnboundedScrollPosition":144}],62:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -10181,7 +15940,7 @@ var ReactInjection = {
 };
 
 module.exports = ReactInjection;
-},{"./DOMProperty":11,"./EventPluginHub":17,"./ReactBrowserEventEmitter":28,"./ReactClass":31,"./ReactComponentEnvironment":34,"./ReactEmptyComponent":56,"./ReactNativeComponent":70,"./ReactPerf":73,"./ReactRootIndex":80,"./ReactUpdates":85}],62:[function(require,module,exports){
+},{"./DOMProperty":12,"./EventPluginHub":18,"./ReactBrowserEventEmitter":29,"./ReactClass":32,"./ReactComponentEnvironment":35,"./ReactEmptyComponent":57,"./ReactNativeComponent":71,"./ReactPerf":74,"./ReactRootIndex":81,"./ReactUpdates":86}],63:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -10306,7 +16065,7 @@ var ReactInputSelection = {
 };
 
 module.exports = ReactInputSelection;
-},{"./ReactDOMSelection":46,"fbjs/lib/containsNode":135,"fbjs/lib/focusNode":140,"fbjs/lib/getActiveElement":141}],63:[function(require,module,exports){
+},{"./ReactDOMSelection":47,"fbjs/lib/containsNode":136,"fbjs/lib/focusNode":141,"fbjs/lib/getActiveElement":142}],64:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -10612,7 +16371,7 @@ var ReactInstanceHandles = {
 module.exports = ReactInstanceHandles;
 }).call(this,require('_process'))
 
-},{"./ReactRootIndex":80,"_process":1,"fbjs/lib/invariant":146}],64:[function(require,module,exports){
+},{"./ReactRootIndex":81,"_process":1,"fbjs/lib/invariant":147}],65:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -10660,7 +16419,7 @@ var ReactInstanceMap = {
 };
 
 module.exports = ReactInstanceMap;
-},{}],65:[function(require,module,exports){
+},{}],66:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -10738,7 +16497,7 @@ var React = {
 module.exports = React;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"./ReactChildren":30,"./ReactClass":31,"./ReactComponent":32,"./ReactDOMFactories":40,"./ReactElement":54,"./ReactElementValidator":55,"./ReactPropTypes":76,"./ReactVersion":86,"./onlyChild":123,"_process":1}],66:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactChildren":31,"./ReactClass":32,"./ReactComponent":33,"./ReactDOMFactories":41,"./ReactElement":55,"./ReactElementValidator":56,"./ReactPropTypes":77,"./ReactVersion":87,"./onlyChild":124,"_process":1}],67:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -10784,7 +16543,7 @@ var ReactMarkupChecksum = {
 };
 
 module.exports = ReactMarkupChecksum;
-},{"./adler32":105}],67:[function(require,module,exports){
+},{"./adler32":106}],68:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -11638,7 +17397,7 @@ ReactPerf.measureMethods(ReactMount, 'ReactMount', {
 module.exports = ReactMount;
 }).call(this,require('_process'))
 
-},{"./DOMProperty":11,"./Object.assign":24,"./ReactBrowserEventEmitter":28,"./ReactCurrentOwner":36,"./ReactDOMFeatureFlags":41,"./ReactElement":54,"./ReactEmptyComponentRegistry":57,"./ReactInstanceHandles":63,"./ReactInstanceMap":64,"./ReactMarkupChecksum":66,"./ReactPerf":73,"./ReactReconciler":78,"./ReactUpdateQueue":84,"./ReactUpdates":85,"./instantiateReactComponent":120,"./setInnerHTML":126,"./shouldUpdateReactComponent":128,"./validateDOMNesting":130,"_process":1,"fbjs/lib/containsNode":135,"fbjs/lib/emptyObject":139,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],68:[function(require,module,exports){
+},{"./DOMProperty":12,"./Object.assign":25,"./ReactBrowserEventEmitter":29,"./ReactCurrentOwner":37,"./ReactDOMFeatureFlags":42,"./ReactElement":55,"./ReactEmptyComponentRegistry":58,"./ReactInstanceHandles":64,"./ReactInstanceMap":65,"./ReactMarkupChecksum":67,"./ReactPerf":74,"./ReactReconciler":79,"./ReactUpdateQueue":85,"./ReactUpdates":86,"./instantiateReactComponent":121,"./setInnerHTML":127,"./shouldUpdateReactComponent":129,"./validateDOMNesting":131,"_process":1,"fbjs/lib/containsNode":136,"fbjs/lib/emptyObject":140,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],69:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -12138,7 +17897,7 @@ var ReactMultiChild = {
 module.exports = ReactMultiChild;
 }).call(this,require('_process'))
 
-},{"./ReactChildReconciler":29,"./ReactComponentEnvironment":34,"./ReactCurrentOwner":36,"./ReactMultiChildUpdateTypes":69,"./ReactReconciler":78,"./flattenChildren":111,"_process":1}],69:[function(require,module,exports){
+},{"./ReactChildReconciler":30,"./ReactComponentEnvironment":35,"./ReactCurrentOwner":37,"./ReactMultiChildUpdateTypes":70,"./ReactReconciler":79,"./flattenChildren":112,"_process":1}],70:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -12171,7 +17930,7 @@ var ReactMultiChildUpdateTypes = keyMirror({
 });
 
 module.exports = ReactMultiChildUpdateTypes;
-},{"fbjs/lib/keyMirror":149}],70:[function(require,module,exports){
+},{"fbjs/lib/keyMirror":150}],71:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -12269,7 +18028,7 @@ var ReactNativeComponent = {
 module.exports = ReactNativeComponent;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"_process":1,"fbjs/lib/invariant":146}],71:[function(require,module,exports){
+},{"./Object.assign":25,"_process":1,"fbjs/lib/invariant":147}],72:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2015, Facebook, Inc.
@@ -12391,7 +18150,7 @@ var ReactNoopUpdateQueue = {
 module.exports = ReactNoopUpdateQueue;
 }).call(this,require('_process'))
 
-},{"_process":1,"fbjs/lib/warning":157}],72:[function(require,module,exports){
+},{"_process":1,"fbjs/lib/warning":158}],73:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -12486,7 +18245,7 @@ var ReactOwner = {
 module.exports = ReactOwner;
 }).call(this,require('_process'))
 
-},{"_process":1,"fbjs/lib/invariant":146}],73:[function(require,module,exports){
+},{"_process":1,"fbjs/lib/invariant":147}],74:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -12586,7 +18345,7 @@ function _noMeasure(objName, fnName, func) {
 module.exports = ReactPerf;
 }).call(this,require('_process'))
 
-},{"_process":1}],74:[function(require,module,exports){
+},{"_process":1}],75:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -12614,7 +18373,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = ReactPropTypeLocationNames;
 }).call(this,require('_process'))
 
-},{"_process":1}],75:[function(require,module,exports){
+},{"_process":1}],76:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -12637,7 +18396,7 @@ var ReactPropTypeLocations = keyMirror({
 });
 
 module.exports = ReactPropTypeLocations;
-},{"fbjs/lib/keyMirror":149}],76:[function(require,module,exports){
+},{"fbjs/lib/keyMirror":150}],77:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -12994,7 +18753,7 @@ function getClassName(propValue) {
 }
 
 module.exports = ReactPropTypes;
-},{"./ReactElement":54,"./ReactPropTypeLocationNames":74,"./getIteratorFn":117,"fbjs/lib/emptyFunction":138}],77:[function(require,module,exports){
+},{"./ReactElement":55,"./ReactPropTypeLocationNames":75,"./getIteratorFn":118,"fbjs/lib/emptyFunction":139}],78:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -13146,7 +18905,7 @@ assign(ReactReconcileTransaction.prototype, Transaction.Mixin, Mixin);
 PooledClass.addPoolingTo(ReactReconcileTransaction);
 
 module.exports = ReactReconcileTransaction;
-},{"./CallbackQueue":7,"./Object.assign":24,"./PooledClass":25,"./ReactBrowserEventEmitter":28,"./ReactDOMFeatureFlags":41,"./ReactInputSelection":62,"./Transaction":102}],78:[function(require,module,exports){
+},{"./CallbackQueue":8,"./Object.assign":25,"./PooledClass":26,"./ReactBrowserEventEmitter":29,"./ReactDOMFeatureFlags":42,"./ReactInputSelection":63,"./Transaction":103}],79:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -13254,7 +19013,7 @@ var ReactReconciler = {
 };
 
 module.exports = ReactReconciler;
-},{"./ReactRef":79}],79:[function(require,module,exports){
+},{"./ReactRef":80}],80:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -13333,7 +19092,7 @@ ReactRef.detachRefs = function (instance, element) {
 };
 
 module.exports = ReactRef;
-},{"./ReactOwner":72}],80:[function(require,module,exports){
+},{"./ReactOwner":73}],81:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -13363,7 +19122,7 @@ var ReactRootIndex = {
 };
 
 module.exports = ReactRootIndex;
-},{}],81:[function(require,module,exports){
+},{}],82:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -13387,7 +19146,7 @@ var ReactServerBatchingStrategy = {
 };
 
 module.exports = ReactServerBatchingStrategy;
-},{}],82:[function(require,module,exports){
+},{}],83:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -13474,7 +19233,7 @@ module.exports = {
 };
 }).call(this,require('_process'))
 
-},{"./ReactDefaultBatchingStrategy":50,"./ReactElement":54,"./ReactInstanceHandles":63,"./ReactMarkupChecksum":66,"./ReactServerBatchingStrategy":81,"./ReactServerRenderingTransaction":83,"./ReactUpdates":85,"./instantiateReactComponent":120,"_process":1,"fbjs/lib/emptyObject":139,"fbjs/lib/invariant":146}],83:[function(require,module,exports){
+},{"./ReactDefaultBatchingStrategy":51,"./ReactElement":55,"./ReactInstanceHandles":64,"./ReactMarkupChecksum":67,"./ReactServerBatchingStrategy":82,"./ReactServerRenderingTransaction":84,"./ReactUpdates":86,"./instantiateReactComponent":121,"_process":1,"fbjs/lib/emptyObject":140,"fbjs/lib/invariant":147}],84:[function(require,module,exports){
 /**
  * Copyright 2014-2015, Facebook, Inc.
  * All rights reserved.
@@ -13562,7 +19321,7 @@ assign(ReactServerRenderingTransaction.prototype, Transaction.Mixin, Mixin);
 PooledClass.addPoolingTo(ReactServerRenderingTransaction);
 
 module.exports = ReactServerRenderingTransaction;
-},{"./CallbackQueue":7,"./Object.assign":24,"./PooledClass":25,"./Transaction":102,"fbjs/lib/emptyFunction":138}],84:[function(require,module,exports){
+},{"./CallbackQueue":8,"./Object.assign":25,"./PooledClass":26,"./Transaction":103,"fbjs/lib/emptyFunction":139}],85:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2015, Facebook, Inc.
@@ -13823,7 +19582,7 @@ var ReactUpdateQueue = {
 module.exports = ReactUpdateQueue;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"./ReactCurrentOwner":36,"./ReactElement":54,"./ReactInstanceMap":64,"./ReactUpdates":85,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],85:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactCurrentOwner":37,"./ReactElement":55,"./ReactInstanceMap":65,"./ReactUpdates":86,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],86:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -14050,7 +19809,7 @@ var ReactUpdates = {
 module.exports = ReactUpdates;
 }).call(this,require('_process'))
 
-},{"./CallbackQueue":7,"./Object.assign":24,"./PooledClass":25,"./ReactPerf":73,"./ReactReconciler":78,"./Transaction":102,"_process":1,"fbjs/lib/invariant":146}],86:[function(require,module,exports){
+},{"./CallbackQueue":8,"./Object.assign":25,"./PooledClass":26,"./ReactPerf":74,"./ReactReconciler":79,"./Transaction":103,"_process":1,"fbjs/lib/invariant":147}],87:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -14065,7 +19824,7 @@ module.exports = ReactUpdates;
 'use strict';
 
 module.exports = '0.14.3';
-},{}],87:[function(require,module,exports){
+},{}],88:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -14193,7 +19952,7 @@ var SVGDOMPropertyConfig = {
 };
 
 module.exports = SVGDOMPropertyConfig;
-},{"./DOMProperty":11}],88:[function(require,module,exports){
+},{"./DOMProperty":12}],89:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -14395,7 +20154,7 @@ var SelectEventPlugin = {
 };
 
 module.exports = SelectEventPlugin;
-},{"./EventConstants":16,"./EventPropagators":20,"./ReactInputSelection":62,"./SyntheticEvent":94,"./isTextInputElement":122,"fbjs/lib/ExecutionEnvironment":132,"fbjs/lib/getActiveElement":141,"fbjs/lib/keyOf":150,"fbjs/lib/shallowEqual":155}],89:[function(require,module,exports){
+},{"./EventConstants":17,"./EventPropagators":21,"./ReactInputSelection":63,"./SyntheticEvent":95,"./isTextInputElement":123,"fbjs/lib/ExecutionEnvironment":133,"fbjs/lib/getActiveElement":142,"fbjs/lib/keyOf":151,"fbjs/lib/shallowEqual":156}],90:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -14425,7 +20184,7 @@ var ServerReactRootIndex = {
 };
 
 module.exports = ServerReactRootIndex;
-},{}],90:[function(require,module,exports){
+},{}],91:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -15016,7 +20775,7 @@ var SimpleEventPlugin = {
 module.exports = SimpleEventPlugin;
 }).call(this,require('_process'))
 
-},{"./EventConstants":16,"./EventPropagators":20,"./ReactMount":67,"./SyntheticClipboardEvent":91,"./SyntheticDragEvent":93,"./SyntheticEvent":94,"./SyntheticFocusEvent":95,"./SyntheticKeyboardEvent":97,"./SyntheticMouseEvent":98,"./SyntheticTouchEvent":99,"./SyntheticUIEvent":100,"./SyntheticWheelEvent":101,"./getEventCharCode":113,"_process":1,"fbjs/lib/EventListener":131,"fbjs/lib/emptyFunction":138,"fbjs/lib/invariant":146,"fbjs/lib/keyOf":150}],91:[function(require,module,exports){
+},{"./EventConstants":17,"./EventPropagators":21,"./ReactMount":68,"./SyntheticClipboardEvent":92,"./SyntheticDragEvent":94,"./SyntheticEvent":95,"./SyntheticFocusEvent":96,"./SyntheticKeyboardEvent":98,"./SyntheticMouseEvent":99,"./SyntheticTouchEvent":100,"./SyntheticUIEvent":101,"./SyntheticWheelEvent":102,"./getEventCharCode":114,"_process":1,"fbjs/lib/EventListener":132,"fbjs/lib/emptyFunction":139,"fbjs/lib/invariant":147,"fbjs/lib/keyOf":151}],92:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15056,7 +20815,7 @@ function SyntheticClipboardEvent(dispatchConfig, dispatchMarker, nativeEvent, na
 SyntheticEvent.augmentClass(SyntheticClipboardEvent, ClipboardEventInterface);
 
 module.exports = SyntheticClipboardEvent;
-},{"./SyntheticEvent":94}],92:[function(require,module,exports){
+},{"./SyntheticEvent":95}],93:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15094,7 +20853,7 @@ function SyntheticCompositionEvent(dispatchConfig, dispatchMarker, nativeEvent, 
 SyntheticEvent.augmentClass(SyntheticCompositionEvent, CompositionEventInterface);
 
 module.exports = SyntheticCompositionEvent;
-},{"./SyntheticEvent":94}],93:[function(require,module,exports){
+},{"./SyntheticEvent":95}],94:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15132,7 +20891,7 @@ function SyntheticDragEvent(dispatchConfig, dispatchMarker, nativeEvent, nativeE
 SyntheticMouseEvent.augmentClass(SyntheticDragEvent, DragEventInterface);
 
 module.exports = SyntheticDragEvent;
-},{"./SyntheticMouseEvent":98}],94:[function(require,module,exports){
+},{"./SyntheticMouseEvent":99}],95:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -15313,7 +21072,7 @@ PooledClass.addPoolingTo(SyntheticEvent, PooledClass.fourArgumentPooler);
 module.exports = SyntheticEvent;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"./PooledClass":25,"_process":1,"fbjs/lib/emptyFunction":138,"fbjs/lib/warning":157}],95:[function(require,module,exports){
+},{"./Object.assign":25,"./PooledClass":26,"_process":1,"fbjs/lib/emptyFunction":139,"fbjs/lib/warning":158}],96:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15351,7 +21110,7 @@ function SyntheticFocusEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticUIEvent.augmentClass(SyntheticFocusEvent, FocusEventInterface);
 
 module.exports = SyntheticFocusEvent;
-},{"./SyntheticUIEvent":100}],96:[function(require,module,exports){
+},{"./SyntheticUIEvent":101}],97:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15390,7 +21149,7 @@ function SyntheticInputEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticEvent.augmentClass(SyntheticInputEvent, InputEventInterface);
 
 module.exports = SyntheticInputEvent;
-},{"./SyntheticEvent":94}],97:[function(require,module,exports){
+},{"./SyntheticEvent":95}],98:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15476,7 +21235,7 @@ function SyntheticKeyboardEvent(dispatchConfig, dispatchMarker, nativeEvent, nat
 SyntheticUIEvent.augmentClass(SyntheticKeyboardEvent, KeyboardEventInterface);
 
 module.exports = SyntheticKeyboardEvent;
-},{"./SyntheticUIEvent":100,"./getEventCharCode":113,"./getEventKey":114,"./getEventModifierState":115}],98:[function(require,module,exports){
+},{"./SyntheticUIEvent":101,"./getEventCharCode":114,"./getEventKey":115,"./getEventModifierState":116}],99:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15550,7 +21309,7 @@ function SyntheticMouseEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticUIEvent.augmentClass(SyntheticMouseEvent, MouseEventInterface);
 
 module.exports = SyntheticMouseEvent;
-},{"./SyntheticUIEvent":100,"./ViewportMetrics":103,"./getEventModifierState":115}],99:[function(require,module,exports){
+},{"./SyntheticUIEvent":101,"./ViewportMetrics":104,"./getEventModifierState":116}],100:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15597,7 +21356,7 @@ function SyntheticTouchEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticUIEvent.augmentClass(SyntheticTouchEvent, TouchEventInterface);
 
 module.exports = SyntheticTouchEvent;
-},{"./SyntheticUIEvent":100,"./getEventModifierState":115}],100:[function(require,module,exports){
+},{"./SyntheticUIEvent":101,"./getEventModifierState":116}],101:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15658,7 +21417,7 @@ function SyntheticUIEvent(dispatchConfig, dispatchMarker, nativeEvent, nativeEve
 SyntheticEvent.augmentClass(SyntheticUIEvent, UIEventInterface);
 
 module.exports = SyntheticUIEvent;
-},{"./SyntheticEvent":94,"./getEventTarget":116}],101:[function(require,module,exports){
+},{"./SyntheticEvent":95,"./getEventTarget":117}],102:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15714,7 +21473,7 @@ function SyntheticWheelEvent(dispatchConfig, dispatchMarker, nativeEvent, native
 SyntheticMouseEvent.augmentClass(SyntheticWheelEvent, WheelEventInterface);
 
 module.exports = SyntheticWheelEvent;
-},{"./SyntheticMouseEvent":98}],102:[function(require,module,exports){
+},{"./SyntheticMouseEvent":99}],103:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -15949,7 +21708,7 @@ var Transaction = {
 module.exports = Transaction;
 }).call(this,require('_process'))
 
-},{"_process":1,"fbjs/lib/invariant":146}],103:[function(require,module,exports){
+},{"_process":1,"fbjs/lib/invariant":147}],104:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -15977,7 +21736,7 @@ var ViewportMetrics = {
 };
 
 module.exports = ViewportMetrics;
-},{}],104:[function(require,module,exports){
+},{}],105:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -16040,7 +21799,7 @@ function accumulateInto(current, next) {
 module.exports = accumulateInto;
 }).call(this,require('_process'))
 
-},{"_process":1,"fbjs/lib/invariant":146}],105:[function(require,module,exports){
+},{"_process":1,"fbjs/lib/invariant":147}],106:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16083,7 +21842,7 @@ function adler32(data) {
 }
 
 module.exports = adler32;
-},{}],106:[function(require,module,exports){
+},{}],107:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -16111,7 +21870,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = canDefineProperty;
 }).call(this,require('_process'))
 
-},{"_process":1}],107:[function(require,module,exports){
+},{"_process":1}],108:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16167,7 +21926,7 @@ function dangerousStyleValue(name, value) {
 }
 
 module.exports = dangerousStyleValue;
-},{"./CSSProperty":5}],108:[function(require,module,exports){
+},{"./CSSProperty":6}],109:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -16219,7 +21978,7 @@ function deprecated(fnName, newModule, newPackage, ctx, fn) {
 module.exports = deprecated;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"_process":1,"fbjs/lib/warning":157}],109:[function(require,module,exports){
+},{"./Object.assign":25,"_process":1,"fbjs/lib/warning":158}],110:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16258,7 +22017,7 @@ function escapeTextContentForBrowser(text) {
 }
 
 module.exports = escapeTextContentForBrowser;
-},{}],110:[function(require,module,exports){
+},{}],111:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -16311,7 +22070,7 @@ function findDOMNode(componentOrElement) {
 module.exports = findDOMNode;
 }).call(this,require('_process'))
 
-},{"./ReactCurrentOwner":36,"./ReactInstanceMap":64,"./ReactMount":67,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],111:[function(require,module,exports){
+},{"./ReactCurrentOwner":37,"./ReactInstanceMap":65,"./ReactMount":68,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],112:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -16363,7 +22122,7 @@ function flattenChildren(children) {
 module.exports = flattenChildren;
 }).call(this,require('_process'))
 
-},{"./traverseAllChildren":129,"_process":1,"fbjs/lib/warning":157}],112:[function(require,module,exports){
+},{"./traverseAllChildren":130,"_process":1,"fbjs/lib/warning":158}],113:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16393,7 +22152,7 @@ var forEachAccumulated = function (arr, cb, scope) {
 };
 
 module.exports = forEachAccumulated;
-},{}],113:[function(require,module,exports){
+},{}],114:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16444,7 +22203,7 @@ function getEventCharCode(nativeEvent) {
 }
 
 module.exports = getEventCharCode;
-},{}],114:[function(require,module,exports){
+},{}],115:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16548,7 +22307,7 @@ function getEventKey(nativeEvent) {
 }
 
 module.exports = getEventKey;
-},{"./getEventCharCode":113}],115:[function(require,module,exports){
+},{"./getEventCharCode":114}],116:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16593,7 +22352,7 @@ function getEventModifierState(nativeEvent) {
 }
 
 module.exports = getEventModifierState;
-},{}],116:[function(require,module,exports){
+},{}],117:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16623,7 +22382,7 @@ function getEventTarget(nativeEvent) {
 }
 
 module.exports = getEventTarget;
-},{}],117:[function(require,module,exports){
+},{}],118:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16664,7 +22423,7 @@ function getIteratorFn(maybeIterable) {
 }
 
 module.exports = getIteratorFn;
-},{}],118:[function(require,module,exports){
+},{}],119:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16738,7 +22497,7 @@ function getNodeForCharacterOffset(root, offset) {
 }
 
 module.exports = getNodeForCharacterOffset;
-},{}],119:[function(require,module,exports){
+},{}],120:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16772,7 +22531,7 @@ function getTextContentAccessor() {
 }
 
 module.exports = getTextContentAccessor;
-},{"fbjs/lib/ExecutionEnvironment":132}],120:[function(require,module,exports){
+},{"fbjs/lib/ExecutionEnvironment":133}],121:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -16888,7 +22647,7 @@ function instantiateReactComponent(node) {
 module.exports = instantiateReactComponent;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"./ReactCompositeComponent":35,"./ReactEmptyComponent":56,"./ReactNativeComponent":70,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],121:[function(require,module,exports){
+},{"./Object.assign":25,"./ReactCompositeComponent":36,"./ReactEmptyComponent":57,"./ReactNativeComponent":71,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],122:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16949,7 +22708,7 @@ function isEventSupported(eventNameSuffix, capture) {
 }
 
 module.exports = isEventSupported;
-},{"fbjs/lib/ExecutionEnvironment":132}],122:[function(require,module,exports){
+},{"fbjs/lib/ExecutionEnvironment":133}],123:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -16990,7 +22749,7 @@ function isTextInputElement(elem) {
 }
 
 module.exports = isTextInputElement;
-},{}],123:[function(require,module,exports){
+},{}],124:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -17027,7 +22786,7 @@ function onlyChild(children) {
 module.exports = onlyChild;
 }).call(this,require('_process'))
 
-},{"./ReactElement":54,"_process":1,"fbjs/lib/invariant":146}],124:[function(require,module,exports){
+},{"./ReactElement":55,"_process":1,"fbjs/lib/invariant":147}],125:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -17054,7 +22813,7 @@ function quoteAttributeValueForBrowser(value) {
 }
 
 module.exports = quoteAttributeValueForBrowser;
-},{"./escapeTextContentForBrowser":109}],125:[function(require,module,exports){
+},{"./escapeTextContentForBrowser":110}],126:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -17071,7 +22830,7 @@ module.exports = quoteAttributeValueForBrowser;
 var ReactMount = require('./ReactMount');
 
 module.exports = ReactMount.renderSubtreeIntoContainer;
-},{"./ReactMount":67}],126:[function(require,module,exports){
+},{"./ReactMount":68}],127:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -17162,7 +22921,7 @@ if (ExecutionEnvironment.canUseDOM) {
 }
 
 module.exports = setInnerHTML;
-},{"fbjs/lib/ExecutionEnvironment":132}],127:[function(require,module,exports){
+},{"fbjs/lib/ExecutionEnvironment":133}],128:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -17203,7 +22962,7 @@ if (ExecutionEnvironment.canUseDOM) {
 }
 
 module.exports = setTextContent;
-},{"./escapeTextContentForBrowser":109,"./setInnerHTML":126,"fbjs/lib/ExecutionEnvironment":132}],128:[function(require,module,exports){
+},{"./escapeTextContentForBrowser":110,"./setInnerHTML":127,"fbjs/lib/ExecutionEnvironment":133}],129:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -17247,7 +23006,7 @@ function shouldUpdateReactComponent(prevElement, nextElement) {
 }
 
 module.exports = shouldUpdateReactComponent;
-},{}],129:[function(require,module,exports){
+},{}],130:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -17440,7 +23199,7 @@ function traverseAllChildren(children, callback, traverseContext) {
 module.exports = traverseAllChildren;
 }).call(this,require('_process'))
 
-},{"./ReactCurrentOwner":36,"./ReactElement":54,"./ReactInstanceHandles":63,"./getIteratorFn":117,"_process":1,"fbjs/lib/invariant":146,"fbjs/lib/warning":157}],130:[function(require,module,exports){
+},{"./ReactCurrentOwner":37,"./ReactElement":55,"./ReactInstanceHandles":64,"./getIteratorFn":118,"_process":1,"fbjs/lib/invariant":147,"fbjs/lib/warning":158}],131:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2015, Facebook, Inc.
@@ -17807,7 +23566,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = validateDOMNesting;
 }).call(this,require('_process'))
 
-},{"./Object.assign":24,"_process":1,"fbjs/lib/emptyFunction":138,"fbjs/lib/warning":157}],131:[function(require,module,exports){
+},{"./Object.assign":25,"_process":1,"fbjs/lib/emptyFunction":139,"fbjs/lib/warning":158}],132:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -17895,7 +23654,7 @@ var EventListener = {
 module.exports = EventListener;
 }).call(this,require('_process'))
 
-},{"./emptyFunction":138,"_process":1}],132:[function(require,module,exports){
+},{"./emptyFunction":139,"_process":1}],133:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -17932,7 +23691,7 @@ var ExecutionEnvironment = {
 };
 
 module.exports = ExecutionEnvironment;
-},{}],133:[function(require,module,exports){
+},{}],134:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -17965,7 +23724,7 @@ function camelize(string) {
 }
 
 module.exports = camelize;
-},{}],134:[function(require,module,exports){
+},{}],135:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18006,7 +23765,7 @@ function camelizeStyleName(string) {
 }
 
 module.exports = camelizeStyleName;
-},{"./camelize":133}],135:[function(require,module,exports){
+},{"./camelize":134}],136:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18062,7 +23821,7 @@ function containsNode(_x, _x2) {
 }
 
 module.exports = containsNode;
-},{"./isTextNode":148}],136:[function(require,module,exports){
+},{"./isTextNode":149}],137:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18148,7 +23907,7 @@ function createArrayFromMixed(obj) {
 }
 
 module.exports = createArrayFromMixed;
-},{"./toArray":156}],137:[function(require,module,exports){
+},{"./toArray":157}],138:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -18236,7 +23995,7 @@ function createNodesFromMarkup(markup, handleScript) {
 module.exports = createNodesFromMarkup;
 }).call(this,require('_process'))
 
-},{"./ExecutionEnvironment":132,"./createArrayFromMixed":136,"./getMarkupWrap":142,"./invariant":146,"_process":1}],138:[function(require,module,exports){
+},{"./ExecutionEnvironment":133,"./createArrayFromMixed":137,"./getMarkupWrap":143,"./invariant":147,"_process":1}],139:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18275,7 +24034,7 @@ emptyFunction.thatReturnsArgument = function (arg) {
 };
 
 module.exports = emptyFunction;
-},{}],139:[function(require,module,exports){
+},{}],140:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -18299,7 +24058,7 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = emptyObject;
 }).call(this,require('_process'))
 
-},{"_process":1}],140:[function(require,module,exports){
+},{"_process":1}],141:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18326,7 +24085,7 @@ function focusNode(node) {
 }
 
 module.exports = focusNode;
-},{}],141:[function(require,module,exports){
+},{}],142:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18360,7 +24119,7 @@ function getActiveElement() /*?DOMElement*/{
 }
 
 module.exports = getActiveElement;
-},{}],142:[function(require,module,exports){
+},{}],143:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -18459,7 +24218,7 @@ function getMarkupWrap(nodeName) {
 module.exports = getMarkupWrap;
 }).call(this,require('_process'))
 
-},{"./ExecutionEnvironment":132,"./invariant":146,"_process":1}],143:[function(require,module,exports){
+},{"./ExecutionEnvironment":133,"./invariant":147,"_process":1}],144:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18498,7 +24257,7 @@ function getUnboundedScrollPosition(scrollable) {
 }
 
 module.exports = getUnboundedScrollPosition;
-},{}],144:[function(require,module,exports){
+},{}],145:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18532,7 +24291,7 @@ function hyphenate(string) {
 }
 
 module.exports = hyphenate;
-},{}],145:[function(require,module,exports){
+},{}],146:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18572,7 +24331,7 @@ function hyphenateStyleName(string) {
 }
 
 module.exports = hyphenateStyleName;
-},{"./hyphenate":144}],146:[function(require,module,exports){
+},{"./hyphenate":145}],147:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -18625,7 +24384,7 @@ var invariant = function (condition, format, a, b, c, d, e, f) {
 module.exports = invariant;
 }).call(this,require('_process'))
 
-},{"_process":1}],147:[function(require,module,exports){
+},{"_process":1}],148:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18649,7 +24408,7 @@ function isNode(object) {
 }
 
 module.exports = isNode;
-},{}],148:[function(require,module,exports){
+},{}],149:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18675,7 +24434,7 @@ function isTextNode(object) {
 }
 
 module.exports = isTextNode;
-},{"./isNode":147}],149:[function(require,module,exports){
+},{"./isNode":148}],150:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -18727,7 +24486,7 @@ var keyMirror = function (obj) {
 module.exports = keyMirror;
 }).call(this,require('_process'))
 
-},{"./invariant":146,"_process":1}],150:[function(require,module,exports){
+},{"./invariant":147,"_process":1}],151:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18763,7 +24522,7 @@ var keyOf = function (oneKeyObj) {
 };
 
 module.exports = keyOf;
-},{}],151:[function(require,module,exports){
+},{}],152:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18815,7 +24574,7 @@ function mapObject(object, callback, context) {
 }
 
 module.exports = mapObject;
-},{}],152:[function(require,module,exports){
+},{}],153:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18847,7 +24606,7 @@ function memoizeStringOnly(callback) {
 }
 
 module.exports = memoizeStringOnly;
-},{}],153:[function(require,module,exports){
+},{}],154:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18871,7 +24630,7 @@ if (ExecutionEnvironment.canUseDOM) {
 }
 
 module.exports = performance || {};
-},{"./ExecutionEnvironment":132}],154:[function(require,module,exports){
+},{"./ExecutionEnvironment":133}],155:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18901,7 +24660,7 @@ if (!curPerformance || !curPerformance.now) {
 var performanceNow = curPerformance.now.bind(curPerformance);
 
 module.exports = performanceNow;
-},{"./performance":153}],155:[function(require,module,exports){
+},{"./performance":154}],156:[function(require,module,exports){
 /**
  * Copyright 2013-2015, Facebook, Inc.
  * All rights reserved.
@@ -18952,7 +24711,7 @@ function shallowEqual(objA, objB) {
 }
 
 module.exports = shallowEqual;
-},{}],156:[function(require,module,exports){
+},{}],157:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2013-2015, Facebook, Inc.
@@ -19013,7 +24772,7 @@ function toArray(obj) {
 module.exports = toArray;
 }).call(this,require('_process'))
 
-},{"./invariant":146,"_process":1}],157:[function(require,module,exports){
+},{"./invariant":147,"_process":1}],158:[function(require,module,exports){
 (function (process){
 /**
  * Copyright 2014-2015, Facebook, Inc.
@@ -19074,33 +24833,4703 @@ if (process.env.NODE_ENV !== 'production') {
 module.exports = warning;
 }).call(this,require('_process'))
 
-},{"./emptyFunction":138,"_process":1}],158:[function(require,module,exports){
+},{"./emptyFunction":139,"_process":1}],159:[function(require,module,exports){
 'use strict';
 
 module.exports = require('./lib/React');
 
-},{"./lib/React":26}],159:[function(require,module,exports){
+},{"./lib/React":27}],160:[function(require,module,exports){
+/*
+ * Copyright 2012-2013 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define, location) {
+	'use strict';
+
+	var undef;
+
+	define(function (require) {
+
+		var mixin, origin, urlRE, absoluteUrlRE, fullyQualifiedUrlRE;
+
+		mixin = require('./util/mixin');
+
+		urlRE = /([a-z][a-z0-9\+\-\.]*:)\/\/([^@]+@)?(([^:\/]+)(:([0-9]+))?)?(\/[^?#]*)?(\?[^#]*)?(#\S*)?/i;
+		absoluteUrlRE = /^([a-z][a-z0-9\-\+\.]*:\/\/|\/)/i;
+		fullyQualifiedUrlRE = /([a-z][a-z0-9\+\-\.]*:)\/\/([^@]+@)?(([^:\/]+)(:([0-9]+))?)?\//i;
+
+		/**
+		 * Apply params to the template to create a URL.
+		 *
+		 * Parameters that are not applied directly to the template, are appended
+		 * to the URL as query string parameters.
+		 *
+		 * @param {string} template the URI template
+		 * @param {Object} params parameters to apply to the template
+		 * @return {string} the resulting URL
+		 */
+		function buildUrl(template, params) {
+			// internal builder to convert template with params.
+			var url, name, queryStringParams, re;
+
+			url = template;
+			queryStringParams = {};
+
+			if (params) {
+				for (name in params) {
+					/*jshint forin:false */
+					re = new RegExp('\\{' + name + '\\}');
+					if (re.test(url)) {
+						url = url.replace(re, encodeURIComponent(params[name]), 'g');
+					}
+					else {
+						queryStringParams[name] = params[name];
+					}
+				}
+				for (name in queryStringParams) {
+					url += url.indexOf('?') === -1 ? '?' : '&';
+					url += encodeURIComponent(name);
+					if (queryStringParams[name] !== null && queryStringParams[name] !== undefined) {
+						url += '=';
+						url += encodeURIComponent(queryStringParams[name]);
+					}
+				}
+			}
+			return url;
+		}
+
+		function startsWith(str, test) {
+			return str.indexOf(test) === 0;
+		}
+
+		/**
+		 * Create a new URL Builder
+		 *
+		 * @param {string|UrlBuilder} template the base template to build from, may be another UrlBuilder
+		 * @param {Object} [params] base parameters
+		 * @constructor
+		 */
+		function UrlBuilder(template, params) {
+			if (!(this instanceof UrlBuilder)) {
+				// invoke as a constructor
+				return new UrlBuilder(template, params);
+			}
+
+			if (template instanceof UrlBuilder) {
+				this._template = template.template;
+				this._params = mixin({}, this._params, params);
+			}
+			else {
+				this._template = (template || '').toString();
+				this._params = params || {};
+			}
+		}
+
+		UrlBuilder.prototype = {
+
+			/**
+			 * Create a new UrlBuilder instance that extends the current builder.
+			 * The current builder is unmodified.
+			 *
+			 * @param {string} [template] URL template to append to the current template
+			 * @param {Object} [params] params to combine with current params.  New params override existing params
+			 * @return {UrlBuilder} the new builder
+			 */
+			append: function (template,  params) {
+				// TODO consider query strings and fragments
+				return new UrlBuilder(this._template + template, mixin({}, this._params, params));
+			},
+
+			/**
+			 * Create a new UrlBuilder with a fully qualified URL based on the
+			 * window's location or base href and the current templates relative URL.
+			 *
+			 * Path variables are preserved.
+			 *
+			 * *Browser only*
+			 *
+			 * @return {UrlBuilder} the fully qualified URL template
+			 */
+			fullyQualify: function () {
+				if (!location) { return this; }
+				if (this.isFullyQualified()) { return this; }
+
+				var template = this._template;
+
+				if (startsWith(template, '//')) {
+					template = origin.protocol + template;
+				}
+				else if (startsWith(template, '/')) {
+					template = origin.origin + template;
+				}
+				else if (!this.isAbsolute()) {
+					template = origin.origin + origin.pathname.substring(0, origin.pathname.lastIndexOf('/') + 1);
+				}
+
+				if (template.indexOf('/', 8) === -1) {
+					// default the pathname to '/'
+					template = template + '/';
+				}
+
+				return new UrlBuilder(template, this._params);
+			},
+
+			/**
+			 * True if the URL is absolute
+			 *
+			 * @return {boolean}
+			 */
+			isAbsolute: function () {
+				return absoluteUrlRE.test(this.build());
+			},
+
+			/**
+			 * True if the URL is fully qualified
+			 *
+			 * @return {boolean}
+			 */
+			isFullyQualified: function () {
+				return fullyQualifiedUrlRE.test(this.build());
+			},
+
+			/**
+			 * True if the URL is cross origin. The protocol, host and port must not be
+			 * the same in order to be cross origin,
+			 *
+			 * @return {boolean}
+			 */
+			isCrossOrigin: function () {
+				if (!origin) {
+					return true;
+				}
+				var url = this.parts();
+				return url.protocol !== origin.protocol ||
+				       url.hostname !== origin.hostname ||
+				       url.port !== origin.port;
+			},
+
+			/**
+			 * Split a URL into its consituent parts following the naming convention of
+			 * 'window.location'. One difference is that the port will contain the
+			 * protocol default if not specified.
+			 *
+			 * @see https://developer.mozilla.org/en-US/docs/DOM/window.location
+			 *
+			 * @returns {Object} a 'window.location'-like object
+			 */
+			parts: function () {
+				/*jshint maxcomplexity:20 */
+				var url, parts;
+				url = this.fullyQualify().build().match(urlRE);
+				parts = {
+					href: url[0],
+					protocol: url[1],
+					host: url[3] || '',
+					hostname: url[4] || '',
+					port: url[6],
+					pathname: url[7] || '',
+					search: url[8] || '',
+					hash: url[9] || ''
+				};
+				parts.origin = parts.protocol + '//' + parts.host;
+				parts.port = parts.port || (parts.protocol === 'https:' ? '443' : parts.protocol === 'http:' ? '80' : '');
+				return parts;
+			},
+
+			/**
+			 * Expand the template replacing path variables with parameters
+			 *
+			 * @param {Object} [params] params to combine with current params.  New params override existing params
+			 * @return {string} the expanded URL
+			 */
+			build: function (params) {
+				return buildUrl(this._template, mixin({}, this._params, params));
+			},
+
+			/**
+			 * @see build
+			 */
+			toString: function () {
+				return this.build();
+			}
+
+		};
+
+		origin = location ? new UrlBuilder(location.href).parts() : undef;
+
+		return UrlBuilder;
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); },
+	typeof window !== 'undefined' ? window.location : void 0
+	// Boilerplate for AMD and Node
+));
+
+},{"./util/mixin":196}],161:[function(require,module,exports){
+/*
+ * Copyright 2014 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (require) {
+
+		var rest = require('./client/default'),
+		    browser = require('./client/xhr');
+
+		rest.setPlatformDefaultClient(browser);
+
+		return rest;
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"./client/default":163,"./client/xhr":164}],162:[function(require,module,exports){
+/*
+ * Copyright 2014 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (/* require */) {
+
+		/**
+		 * Add common helper methods to a client impl
+		 *
+		 * @param {function} impl the client implementation
+		 * @param {Client} [target] target of this client, used when wrapping other clients
+		 * @returns {Client} the client impl with additional methods
+		 */
+		return function client(impl, target) {
+
+			if (target) {
+
+				/**
+				 * @returns {Client} the target client
+				 */
+				impl.skip = function skip() {
+					return target;
+				};
+
+			}
+
+			/**
+			 * Allow a client to easily be wrapped by an interceptor
+			 *
+			 * @param {Interceptor} interceptor the interceptor to wrap this client with
+			 * @param [config] configuration for the interceptor
+			 * @returns {Client} the newly wrapped client
+			 */
+			impl.wrap = function wrap(interceptor, config) {
+				return interceptor(impl, config);
+			};
+
+			/**
+			 * @deprecated
+			 */
+			impl.chain = function chain() {
+				if (typeof console !== 'undefined') {
+					console.log('rest.js: client.chain() is deprecated, use client.wrap() instead');
+				}
+
+				return impl.wrap.apply(this, arguments);
+			};
+
+			return impl;
+
+		};
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],163:[function(require,module,exports){
+/*
+ * Copyright 2014 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	var undef;
+
+	define(function (require) {
+
+		/**
+		 * Plain JS Object containing properties that represent an HTTP request.
+		 *
+		 * Depending on the capabilities of the underlying client, a request
+		 * may be cancelable. If a request may be canceled, the client will add
+		 * a canceled flag and cancel function to the request object. Canceling
+		 * the request will put the response into an error state.
+		 *
+		 * @field {string} [method='GET'] HTTP method, commonly GET, POST, PUT, DELETE or HEAD
+		 * @field {string|UrlBuilder} [path=''] path template with optional path variables
+		 * @field {Object} [params] parameters for the path template and query string
+		 * @field {Object} [headers] custom HTTP headers to send, in addition to the clients default headers
+		 * @field [entity] the HTTP entity, common for POST or PUT requests
+		 * @field {boolean} [canceled] true if the request has been canceled, set by the client
+		 * @field {Function} [cancel] cancels the request if invoked, provided by the client
+		 * @field {Client} [originator] the client that first handled this request, provided by the interceptor
+		 *
+		 * @class Request
+		 */
+
+		/**
+		 * Plain JS Object containing properties that represent an HTTP response
+		 *
+		 * @field {Object} [request] the request object as received by the root client
+		 * @field {Object} [raw] the underlying request object, like XmlHttpRequest in a browser
+		 * @field {number} [status.code] status code of the response (i.e. 200, 404)
+		 * @field {string} [status.text] status phrase of the response
+		 * @field {Object] [headers] response headers hash of normalized name, value pairs
+		 * @field [entity] the response body
+		 *
+		 * @class Response
+		 */
+
+		/**
+		 * HTTP client particularly suited for RESTful operations.
+		 *
+		 * @field {function} wrap wraps this client with a new interceptor returning the wrapped client
+		 *
+		 * @param {Request} the HTTP request
+		 * @returns {ResponsePromise<Response>} a promise the resolves to the HTTP response
+		 *
+		 * @class Client
+		 */
+
+		 /**
+		  * Extended when.js Promises/A+ promise with HTTP specific helpers
+		  *q
+		  * @method entity promise for the HTTP entity
+		  * @method status promise for the HTTP status code
+		  * @method headers promise for the HTTP response headers
+		  * @method header promise for a specific HTTP response header
+		  *
+		  * @class ResponsePromise
+		  * @extends Promise
+		  */
+
+		var client, target, platformDefault;
+
+		client = require('../client');
+
+		/**
+		 * Make a request with the default client
+		 * @param {Request} the HTTP request
+		 * @returns {Promise<Response>} a promise the resolves to the HTTP response
+		 */
+		function defaultClient() {
+			return target.apply(undef, arguments);
+		}
+
+		/**
+		 * Change the default client
+		 * @param {Client} client the new default client
+		 */
+		defaultClient.setDefaultClient = function setDefaultClient(client) {
+			target = client;
+		};
+
+		/**
+		 * Obtain a direct reference to the current default client
+		 * @returns {Client} the default client
+		 */
+		defaultClient.getDefaultClient = function getDefaultClient() {
+			return target;
+		};
+
+		/**
+		 * Reset the default client to the platform default
+		 */
+		defaultClient.resetDefaultClient = function resetDefaultClient() {
+			target = platformDefault;
+		};
+
+		/**
+		 * @private
+		 */
+		defaultClient.setPlatformDefaultClient = function setPlatformDefaultClient(client) {
+			if (platformDefault) {
+				throw new Error('Unable to redefine platformDefaultClient');
+			}
+			target = platformDefault = client;
+		};
+
+		return client(defaultClient);
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"../client":162}],164:[function(require,module,exports){
+/*
+ * Copyright 2012-2014 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define, global) {
+	'use strict';
+
+	define(function (require) {
+
+		var when, UrlBuilder, normalizeHeaderName, responsePromise, client, headerSplitRE;
+
+		when = require('when');
+		UrlBuilder = require('../UrlBuilder');
+		normalizeHeaderName = require('../util/normalizeHeaderName');
+		responsePromise = require('../util/responsePromise');
+		client = require('../client');
+
+		// according to the spec, the line break is '\r\n', but doesn't hold true in practice
+		headerSplitRE = /[\r|\n]+/;
+
+		function parseHeaders(raw) {
+			// Note: Set-Cookie will be removed by the browser
+			var headers = {};
+
+			if (!raw) { return headers; }
+
+			raw.trim().split(headerSplitRE).forEach(function (header) {
+				var boundary, name, value;
+				boundary = header.indexOf(':');
+				name = normalizeHeaderName(header.substring(0, boundary).trim());
+				value = header.substring(boundary + 1).trim();
+				if (headers[name]) {
+					if (Array.isArray(headers[name])) {
+						// add to an existing array
+						headers[name].push(value);
+					}
+					else {
+						// convert single value to array
+						headers[name] = [headers[name], value];
+					}
+				}
+				else {
+					// new, single value
+					headers[name] = value;
+				}
+			});
+
+			return headers;
+		}
+
+		function safeMixin(target, source) {
+			Object.keys(source || {}).forEach(function (prop) {
+				// make sure the property already exists as
+				// IE 6 will blow up if we add a new prop
+				if (source.hasOwnProperty(prop) && prop in target) {
+					try {
+						target[prop] = source[prop];
+					}
+					catch (e) {
+						// ignore, expected for some properties at some points in the request lifecycle
+					}
+				}
+			});
+
+			return target;
+		}
+
+		return client(function xhr(request) {
+			return responsePromise.promise(function (resolve, reject) {
+				/*jshint maxcomplexity:20 */
+
+				var client, method, url, headers, entity, headerName, response, XMLHttpRequest;
+
+				request = typeof request === 'string' ? { path: request } : request || {};
+				response = { request: request };
+
+				if (request.canceled) {
+					response.error = 'precanceled';
+					reject(response);
+					return;
+				}
+
+				XMLHttpRequest = request.engine || global.XMLHttpRequest;
+				if (!XMLHttpRequest) {
+					reject({ request: request, error: 'xhr-not-available' });
+					return;
+				}
+
+				entity = request.entity;
+				request.method = request.method || (entity ? 'POST' : 'GET');
+				method = request.method;
+				url = new UrlBuilder(request.path || '', request.params).build();
+
+				try {
+					client = response.raw = new XMLHttpRequest();
+
+					// mixin extra request properties before and after opening the request as some properties require being set at different phases of the request
+					safeMixin(client, request.mixin);
+					client.open(method, url, true);
+					safeMixin(client, request.mixin);
+
+					headers = request.headers;
+					for (headerName in headers) {
+						/*jshint forin:false */
+						if (headerName === 'Content-Type' && headers[headerName] === 'multipart/form-data') {
+							// XMLHttpRequest generates its own Content-Type header with the
+							// appropriate multipart boundary when sending multipart/form-data.
+							continue;
+						}
+
+						client.setRequestHeader(headerName, headers[headerName]);
+					}
+
+					request.canceled = false;
+					request.cancel = function cancel() {
+						request.canceled = true;
+						client.abort();
+						reject(response);
+					};
+
+					client.onreadystatechange = function (/* e */) {
+						if (request.canceled) { return; }
+						if (client.readyState === (XMLHttpRequest.DONE || 4)) {
+							response.status = {
+								code: client.status,
+								text: client.statusText
+							};
+							response.headers = parseHeaders(client.getAllResponseHeaders());
+							response.entity = client.responseText;
+
+							if (response.status.code > 0) {
+								// check status code as readystatechange fires before error event
+								resolve(response);
+							}
+							else {
+								// give the error callback a chance to fire before resolving
+								// requests for file:// URLs do not have a status code
+								setTimeout(function () {
+									resolve(response);
+								}, 0);
+							}
+						}
+					};
+
+					try {
+						client.onerror = function (/* e */) {
+							response.error = 'loaderror';
+							reject(response);
+						};
+					}
+					catch (e) {
+						// IE 6 will not support error handling
+					}
+
+					client.send(entity);
+				}
+				catch (e) {
+					response.error = 'loaderror';
+					reject(response);
+				}
+
+			});
+		});
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); },
+	typeof window !== 'undefined' ? window : void 0
+	// Boilerplate for AMD and Node
+));
+
+},{"../UrlBuilder":160,"../client":162,"../util/normalizeHeaderName":197,"../util/responsePromise":198,"when":193}],165:[function(require,module,exports){
+/*
+ * Copyright 2012-2015 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (require) {
+
+		var defaultClient, mixin, responsePromise, client, when;
+
+		defaultClient = require('./client/default');
+		mixin = require('./util/mixin');
+		responsePromise = require('./util/responsePromise');
+		client = require('./client');
+		when = require('when');
+
+		/**
+		 * Interceptors have the ability to intercept the request and/org response
+		 * objects.  They may augment, prune, transform or replace the
+		 * request/response as needed.  Clients may be composed by wrapping
+		 * together multiple interceptors.
+		 *
+		 * Configured interceptors are functional in nature.  Wrapping a client in
+		 * an interceptor will not affect the client, merely the data that flows in
+		 * and out of that client.  A common configuration can be created once and
+		 * shared; specialization can be created by further wrapping that client
+		 * with custom interceptors.
+		 *
+		 * @param {Client} [target] client to wrap
+		 * @param {Object} [config] configuration for the interceptor, properties will be specific to the interceptor implementation
+		 * @returns {Client} A client wrapped with the interceptor
+		 *
+		 * @class Interceptor
+		 */
+
+		function defaultInitHandler(config) {
+			return config;
+		}
+
+		function defaultRequestHandler(request /*, config, meta */) {
+			return request;
+		}
+
+		function defaultResponseHandler(response /*, config, meta */) {
+			return response;
+		}
+
+		function race(promisesOrValues) {
+			// this function is different than when.any as the first to reject also wins
+			return when.promise(function (resolve, reject) {
+				promisesOrValues.forEach(function (promiseOrValue) {
+					when(promiseOrValue, resolve, reject);
+				});
+			});
+		}
+
+		/**
+		 * Alternate return type for the request handler that allows for more complex interactions.
+		 *
+		 * @param properties.request the traditional request return object
+		 * @param {Promise} [properties.abort] promise that resolves if/when the request is aborted
+		 * @param {Client} [properties.client] override the defined client with an alternate client
+		 * @param [properties.response] response for the request, short circuit the request
+		 */
+		function ComplexRequest(properties) {
+			if (!(this instanceof ComplexRequest)) {
+				// in case users forget the 'new' don't mix into the interceptor
+				return new ComplexRequest(properties);
+			}
+			mixin(this, properties);
+		}
+
+		/**
+		 * Create a new interceptor for the provided handlers.
+		 *
+		 * @param {Function} [handlers.init] one time intialization, must return the config object
+		 * @param {Function} [handlers.request] request handler
+		 * @param {Function} [handlers.response] response handler regardless of error state
+		 * @param {Function} [handlers.success] response handler when the request is not in error
+		 * @param {Function} [handlers.error] response handler when the request is in error, may be used to 'unreject' an error state
+		 * @param {Function} [handlers.client] the client to use if otherwise not specified, defaults to platform default client
+		 *
+		 * @returns {Interceptor}
+		 */
+		function interceptor(handlers) {
+
+			var initHandler, requestHandler, successResponseHandler, errorResponseHandler;
+
+			handlers = handlers || {};
+
+			initHandler            = handlers.init    || defaultInitHandler;
+			requestHandler         = handlers.request || defaultRequestHandler;
+			successResponseHandler = handlers.success || handlers.response || defaultResponseHandler;
+			errorResponseHandler   = handlers.error   || function () {
+				// Propagate the rejection, with the result of the handler
+				return when((handlers.response || defaultResponseHandler).apply(this, arguments), when.reject, when.reject);
+			};
+
+			return function (target, config) {
+
+				if (typeof target === 'object') {
+					config = target;
+				}
+				if (typeof target !== 'function') {
+					target = handlers.client || defaultClient;
+				}
+
+				config = initHandler(config || {});
+
+				function interceptedClient(request) {
+					var context, meta;
+					context = {};
+					meta = { 'arguments': Array.prototype.slice.call(arguments), client: interceptedClient };
+					request = typeof request === 'string' ? { path: request } : request || {};
+					request.originator = request.originator || interceptedClient;
+					return responsePromise(
+						requestHandler.call(context, request, config, meta),
+						function (request) {
+							var response, abort, next;
+							next = target;
+							if (request instanceof ComplexRequest) {
+								// unpack request
+								abort = request.abort;
+								next = request.client || next;
+								response = request.response;
+								// normalize request, must be last
+								request = request.request;
+							}
+							response = response || when(request, function (request) {
+								return when(
+									next(request),
+									function (response) {
+										return successResponseHandler.call(context, response, config, meta);
+									},
+									function (response) {
+										return errorResponseHandler.call(context, response, config, meta);
+									}
+								);
+							});
+							return abort ? race([response, abort]) : response;
+						},
+						function (error) {
+							return when.reject({ request: request, error: error });
+						}
+					);
+				}
+
+				return client(interceptedClient, target);
+			};
+		}
+
+		interceptor.ComplexRequest = ComplexRequest;
+
+		return interceptor;
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"./client":162,"./client/default":163,"./util/mixin":196,"./util/responsePromise":198,"when":193}],166:[function(require,module,exports){
+/*
+ * Copyright 2012-2014 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (require) {
+
+		var interceptor, mime, registry, noopConverter, when;
+
+		interceptor = require('../interceptor');
+		mime = require('../mime');
+		registry = require('../mime/registry');
+		when = require('when');
+
+		noopConverter = {
+			read: function (obj) { return obj; },
+			write: function (obj) { return obj; }
+		};
+
+		/**
+		 * MIME type support for request and response entities.  Entities are
+		 * (de)serialized using the converter for the MIME type.
+		 *
+		 * Request entities are converted using the desired converter and the
+		 * 'Accept' request header prefers this MIME.
+		 *
+		 * Response entities are converted based on the Content-Type response header.
+		 *
+		 * @param {Client} [client] client to wrap
+		 * @param {string} [config.mime='text/plain'] MIME type to encode the request
+		 *   entity
+		 * @param {string} [config.accept] Accept header for the request
+		 * @param {Client} [config.client=<request.originator>] client passed to the
+		 *   converter, defaults to the client originating the request
+		 * @param {Registry} [config.registry] MIME registry, defaults to the root
+		 *   registry
+		 * @param {boolean} [config.permissive] Allow an unkown request MIME type
+		 *
+		 * @returns {Client}
+		 */
+		return interceptor({
+			init: function (config) {
+				config.registry = config.registry || registry;
+				return config;
+			},
+			request: function (request, config) {
+				var type, headers;
+
+				headers = request.headers || (request.headers = {});
+				type = mime.parse(headers['Content-Type'] = headers['Content-Type'] || config.mime || 'text/plain');
+				headers.Accept = headers.Accept || config.accept || type.raw + ', application/json;q=0.8, text/plain;q=0.5, */*;q=0.2';
+
+				if (!('entity' in request)) {
+					return request;
+				}
+
+				return config.registry.lookup(type).otherwise(function () {
+					// failed to resolve converter
+					if (config.permissive) {
+						return noopConverter;
+					}
+					throw 'mime-unknown';
+				}).then(function (converter) {
+					var client = config.client || request.originator;
+
+					return when.attempt(converter.write, request.entity, { client: client, request: request, mime: type, registry: config.registry })
+						.otherwise(function() {
+							throw 'mime-serialization';
+						})
+						.then(function(entity) {
+							request.entity = entity;
+							return request;
+						});
+				});
+			},
+			response: function (response, config) {
+				if (!(response.headers && response.headers['Content-Type'] && response.entity)) {
+					return response;
+				}
+
+				var type = mime.parse(response.headers['Content-Type']);
+
+				return config.registry.lookup(type).otherwise(function () { return noopConverter; }).then(function (converter) {
+					var client = config.client || response.request && response.request.originator;
+
+					return when.attempt(converter.read, response.entity, { client: client, response: response, mime: type, registry: config.registry })
+						.otherwise(function (e) {
+							response.error = 'mime-deserialization';
+							response.cause = e;
+							throw response;
+						})
+						.then(function (entity) {
+							response.entity = entity;
+							return response;
+						});
+				});
+			}
+		});
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"../interceptor":165,"../mime":169,"../mime/registry":170,"when":193}],167:[function(require,module,exports){
+/*
+ * Copyright 2012-2013 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (require) {
+
+		var interceptor, UrlBuilder;
+
+		interceptor = require('../interceptor');
+		UrlBuilder = require('../UrlBuilder');
+
+		function startsWith(str, prefix) {
+			return str.indexOf(prefix) === 0;
+		}
+
+		function endsWith(str, suffix) {
+			return str.lastIndexOf(suffix) + suffix.length === str.length;
+		}
+
+		/**
+		 * Prefixes the request path with a common value.
+		 *
+		 * @param {Client} [client] client to wrap
+		 * @param {number} [config.prefix] path prefix
+		 *
+		 * @returns {Client}
+		 */
+		return interceptor({
+			request: function (request, config) {
+				var path;
+
+				if (config.prefix && !(new UrlBuilder(request.path).isFullyQualified())) {
+					path = config.prefix;
+					if (request.path) {
+						if (!endsWith(path, '/') && !startsWith(request.path, '/')) {
+							// add missing '/' between path sections
+							path += '/';
+						}
+						path += request.path;
+					}
+					request.path = path;
+				}
+
+				return request;
+			}
+		});
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"../UrlBuilder":160,"../interceptor":165}],168:[function(require,module,exports){
+/*
+ * Copyright 2015 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (require) {
+
+		var interceptor, uriTemplate, mixin;
+
+		interceptor = require('../interceptor');
+		uriTemplate = require('../util/uriTemplate');
+		mixin = require('../util/mixin');
+
+		/**
+		 * Applies request params to the path as a URI Template
+		 *
+		 * Params are removed from the request object, as they have been consumed.
+		 *
+		 * @param {Client} [client] client to wrap
+		 * @param {Object} [config.params] default param values
+		 * @param {string} [config.template] default template
+		 *
+		 * @returns {Client}
+		 */
+		return interceptor({
+			init: function (config) {
+				config.params = config.params || {};
+				config.template = config.template || '';
+				return config;
+			},
+			request: function (request, config) {
+				var template, params;
+
+				template = request.path || config.template;
+				params = mixin({}, request.params, config.params);
+
+				request.path = uriTemplate.expand(template, params);
+				delete request.params;
+
+				return request;
+			}
+		});
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"../interceptor":165,"../util/mixin":196,"../util/uriTemplate":200}],169:[function(require,module,exports){
+/*
+* Copyright 2014 the original author or authors
+* @license MIT, see LICENSE.txt for details
+*
+* @author Scott Andrews
+*/
+
+(function (define) {
+	'use strict';
+
+	var undef;
+
+	define(function (/* require */) {
+
+		/**
+		 * Parse a MIME type into it's constituent parts
+		 *
+		 * @param {string} mime MIME type to parse
+		 * @return {{
+		 *   {string} raw the original MIME type
+		 *   {string} type the type and subtype
+		 *   {string} [suffix] mime suffix, including the plus, if any
+		 *   {Object} params key/value pair of attributes
+		 * }}
+		 */
+		function parse(mime) {
+			var params, type;
+
+			params = mime.split(';');
+			type = params[0].trim().split('+');
+
+			return {
+				raw: mime,
+				type: type[0],
+				suffix: type[1] ? '+' + type[1] : '',
+				params: params.slice(1).reduce(function (params, pair) {
+					pair = pair.split('=');
+					params[pair[0].trim()] = pair[1] ? pair[1].trim() : undef;
+					return params;
+				}, {})
+			};
+		}
+
+		return {
+			parse: parse
+		};
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],170:[function(require,module,exports){
+/*
+ * Copyright 2012-2014 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (require) {
+
+		var mime, when, registry;
+
+		mime = require('../mime');
+		when = require('when');
+
+		function Registry(mimes) {
+
+			/**
+			 * Lookup the converter for a MIME type
+			 *
+			 * @param {string} type the MIME type
+			 * @return a promise for the converter
+			 */
+			this.lookup = function lookup(type) {
+				var parsed;
+
+				parsed = typeof type === 'string' ? mime.parse(type) : type;
+
+				if (mimes[parsed.raw]) {
+					return mimes[parsed.raw];
+				}
+				if (mimes[parsed.type + parsed.suffix]) {
+					return mimes[parsed.type + parsed.suffix];
+				}
+				if (mimes[parsed.type]) {
+					return mimes[parsed.type];
+				}
+				if (mimes[parsed.suffix]) {
+					return mimes[parsed.suffix];
+				}
+
+				return when.reject(new Error('Unable to locate converter for mime "' + parsed.raw + '"'));
+			};
+
+			/**
+			 * Create a late dispatched proxy to the target converter.
+			 *
+			 * Common when a converter is registered under multiple names and
+			 * should be kept in sync if updated.
+			 *
+			 * @param {string} type mime converter to dispatch to
+			 * @returns converter whose read/write methods target the desired mime converter
+			 */
+			this.delegate = function delegate(type) {
+				return {
+					read: function () {
+						var args = arguments;
+						return this.lookup(type).then(function (converter) {
+							return converter.read.apply(this, args);
+						}.bind(this));
+					}.bind(this),
+					write: function () {
+						var args = arguments;
+						return this.lookup(type).then(function (converter) {
+							return converter.write.apply(this, args);
+						}.bind(this));
+					}.bind(this)
+				};
+			};
+
+			/**
+			 * Register a custom converter for a MIME type
+			 *
+			 * @param {string} type the MIME type
+			 * @param converter the converter for the MIME type
+			 * @return a promise for the converter
+			 */
+			this.register = function register(type, converter) {
+				mimes[type] = when(converter);
+				return mimes[type];
+			};
+
+			/**
+			 * Create a child registry whoes registered converters remain local, while
+			 * able to lookup converters from its parent.
+			 *
+			 * @returns child MIME registry
+			 */
+			this.child = function child() {
+				return new Registry(Object.create(mimes));
+			};
+
+		}
+
+		registry = new Registry({});
+
+		// include provided serializers
+		registry.register('application/hal', require('./type/application/hal'));
+		registry.register('application/json', require('./type/application/json'));
+		registry.register('application/x-www-form-urlencoded', require('./type/application/x-www-form-urlencoded'));
+		registry.register('multipart/form-data', require('./type/multipart/form-data'));
+		registry.register('text/plain', require('./type/text/plain'));
+
+		registry.register('+json', registry.delegate('application/json'));
+
+		return registry;
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"../mime":169,"./type/application/hal":171,"./type/application/json":172,"./type/application/x-www-form-urlencoded":173,"./type/multipart/form-data":174,"./type/text/plain":175,"when":193}],171:[function(require,module,exports){
+/*
+ * Copyright 2013-2015 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (require) {
+
+		var pathPrefix, template, find, lazyPromise, responsePromise, when;
+
+		pathPrefix = require('../../../interceptor/pathPrefix');
+		template = require('../../../interceptor/template');
+		find = require('../../../util/find');
+		lazyPromise = require('../../../util/lazyPromise');
+		responsePromise = require('../../../util/responsePromise');
+		when = require('when');
+
+		function defineProperty(obj, name, value) {
+			Object.defineProperty(obj, name, {
+				value: value,
+				configurable: true,
+				enumerable: false,
+				writeable: true
+			});
+		}
+
+		/**
+		 * Hypertext Application Language serializer
+		 *
+		 * Implemented to https://tools.ietf.org/html/draft-kelly-json-hal-06
+		 *
+		 * As the spec is still a draft, this implementation will be updated as the
+		 * spec evolves
+		 *
+		 * Objects are read as HAL indexing links and embedded objects on to the
+		 * resource. Objects are written as plain JSON.
+		 *
+		 * Embedded relationships are indexed onto the resource by the relationship
+		 * as a promise for the related resource.
+		 *
+		 * Links are indexed onto the resource as a lazy promise that will GET the
+		 * resource when a handler is first registered on the promise.
+		 *
+		 * A `requestFor` method is added to the entity to make a request for the
+		 * relationship.
+		 *
+		 * A `clientFor` method is added to the entity to get a full Client for a
+		 * relationship.
+		 *
+		 * The `_links` and `_embedded` properties on the resource are made
+		 * non-enumerable.
+		 */
+		return {
+
+			read: function (str, opts) {
+				var client, console;
+
+				opts = opts || {};
+				client = opts.client;
+				console = opts.console || console;
+
+				function deprecationWarning(relationship, deprecation) {
+					if (deprecation && console && console.warn || console.log) {
+						(console.warn || console.log).call(console, 'Relationship \'' + relationship + '\' is deprecated, see ' + deprecation);
+					}
+				}
+
+				return opts.registry.lookup(opts.mime.suffix).then(function (converter) {
+					return when(converter.read(str, opts)).then(function (root) {
+
+						find.findProperties(root, '_embedded', function (embedded, resource, name) {
+							Object.keys(embedded).forEach(function (relationship) {
+								if (relationship in resource) { return; }
+								var related = responsePromise({
+									entity: embedded[relationship]
+								});
+								defineProperty(resource, relationship, related);
+							});
+							defineProperty(resource, name, embedded);
+						});
+						find.findProperties(root, '_links', function (links, resource, name) {
+							Object.keys(links).forEach(function (relationship) {
+								var link = links[relationship];
+								if (relationship in resource) { return; }
+								defineProperty(resource, relationship, responsePromise.make(lazyPromise(function () {
+									if (link.deprecation) { deprecationWarning(relationship, link.deprecation); }
+									if (link.templated === true) {
+										return template(client)({ path: link.href });
+									}
+									return client({ path: link.href });
+								})));
+							});
+							defineProperty(resource, name, links);
+							defineProperty(resource, 'clientFor', function (relationship, clientOverride) {
+								var link = links[relationship];
+								if (!link) {
+									throw new Error('Unknown relationship: ' + relationship);
+								}
+								if (link.deprecation) { deprecationWarning(relationship, link.deprecation); }
+								if (link.templated === true) {
+									return template(
+										clientOverride || client,
+										{ template: link.href }
+									);
+								}
+								return pathPrefix(
+									clientOverride || client,
+									{ prefix: link.href }
+								);
+							});
+							defineProperty(resource, 'requestFor', function (relationship, request, clientOverride) {
+								var client = this.clientFor(relationship, clientOverride);
+								return client(request);
+							});
+						});
+
+						return root;
+					});
+				});
+
+			},
+
+			write: function (obj, opts) {
+				return opts.registry.lookup(opts.mime.suffix).then(function (converter) {
+					return converter.write(obj, opts);
+				});
+			}
+
+		};
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"../../../interceptor/pathPrefix":167,"../../../interceptor/template":168,"../../../util/find":194,"../../../util/lazyPromise":195,"../../../util/responsePromise":198,"when":193}],172:[function(require,module,exports){
+/*
+ * Copyright 2012-2015 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (/* require */) {
+
+		/**
+		 * Create a new JSON converter with custom reviver/replacer.
+		 *
+		 * The extended converter must be published to a MIME registry in order
+		 * to be used. The existing converter will not be modified.
+		 *
+		 * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON
+		 *
+		 * @param {function} [reviver=undefined] custom JSON.parse reviver
+		 * @param {function|Array} [replacer=undefined] custom JSON.stringify replacer
+		 */
+		function createConverter(reviver, replacer) {
+			return {
+
+				read: function (str) {
+					return JSON.parse(str, reviver);
+				},
+
+				write: function (obj) {
+					return JSON.stringify(obj, replacer);
+				},
+
+				extend: createConverter
+
+			};
+		}
+
+		return createConverter();
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],173:[function(require,module,exports){
+/*
+ * Copyright 2012 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (/* require */) {
+
+		var encodedSpaceRE, urlEncodedSpaceRE;
+
+		encodedSpaceRE = /%20/g;
+		urlEncodedSpaceRE = /\+/g;
+
+		function urlEncode(str) {
+			str = encodeURIComponent(str);
+			// spec says space should be encoded as '+'
+			return str.replace(encodedSpaceRE, '+');
+		}
+
+		function urlDecode(str) {
+			// spec says space should be encoded as '+'
+			str = str.replace(urlEncodedSpaceRE, ' ');
+			return decodeURIComponent(str);
+		}
+
+		function append(str, name, value) {
+			if (Array.isArray(value)) {
+				value.forEach(function (value) {
+					str = append(str, name, value);
+				});
+			}
+			else {
+				if (str.length > 0) {
+					str += '&';
+				}
+				str += urlEncode(name);
+				if (value !== undefined && value !== null) {
+					str += '=' + urlEncode(value);
+				}
+			}
+			return str;
+		}
+
+		return {
+
+			read: function (str) {
+				var obj = {};
+				str.split('&').forEach(function (entry) {
+					var pair, name, value;
+					pair = entry.split('=');
+					name = urlDecode(pair[0]);
+					if (pair.length === 2) {
+						value = urlDecode(pair[1]);
+					}
+					else {
+						value = null;
+					}
+					if (name in obj) {
+						if (!Array.isArray(obj[name])) {
+							// convert to an array, perserving currnent value
+							obj[name] = [obj[name]];
+						}
+						obj[name].push(value);
+					}
+					else {
+						obj[name] = value;
+					}
+				});
+				return obj;
+			},
+
+			write: function (obj) {
+				var str = '';
+				Object.keys(obj).forEach(function (name) {
+					str = append(str, name, obj[name]);
+				});
+				return str;
+			}
+
+		};
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],174:[function(require,module,exports){
+/*
+ * Copyright 2014 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Michael Jackson
+ */
+
+/* global FormData, File, Blob */
+
+(function (define) {
+	'use strict';
+
+	define(function (/* require */) {
+
+		function isFormElement(object) {
+			return object &&
+				object.nodeType === 1 && // Node.ELEMENT_NODE
+				object.tagName === 'FORM';
+		}
+
+		function createFormDataFromObject(object) {
+			var formData = new FormData();
+
+			var value;
+			for (var property in object) {
+				if (object.hasOwnProperty(property)) {
+					value = object[property];
+
+					if (value instanceof File) {
+						formData.append(property, value, value.name);
+					} else if (value instanceof Blob) {
+						formData.append(property, value);
+					} else {
+						formData.append(property, String(value));
+					}
+				}
+			}
+
+			return formData;
+		}
+
+		return {
+
+			write: function (object) {
+				if (typeof FormData === 'undefined') {
+					throw new Error('The multipart/form-data mime serializer requires FormData support');
+				}
+
+				// Support FormData directly.
+				if (object instanceof FormData) {
+					return object;
+				}
+
+				// Support <form> elements.
+				if (isFormElement(object)) {
+					return new FormData(object);
+				}
+
+				// Support plain objects, may contain File/Blob as value.
+				if (typeof object === 'object' && object !== null) {
+					return createFormDataFromObject(object);
+				}
+
+				throw new Error('Unable to create FormData from object ' + object);
+			}
+
+		};
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],175:[function(require,module,exports){
+/*
+ * Copyright 2012 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (/* require */) {
+
+		return {
+
+			read: function (str) {
+				return str;
+			},
+
+			write: function (obj) {
+				return obj.toString();
+			}
+
+		};
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],176:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function (require) {
+
+	var makePromise = require('./makePromise');
+	var Scheduler = require('./Scheduler');
+	var async = require('./env').asap;
+
+	return makePromise({
+		scheduler: new Scheduler(async)
+	});
+
+});
+})(typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); });
+
+},{"./Scheduler":177,"./env":189,"./makePromise":191}],177:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	// Credit to Twisol (https://github.com/Twisol) for suggesting
+	// this type of extensible queue + trampoline approach for next-tick conflation.
+
+	/**
+	 * Async task scheduler
+	 * @param {function} async function to schedule a single async function
+	 * @constructor
+	 */
+	function Scheduler(async) {
+		this._async = async;
+		this._running = false;
+
+		this._queue = this;
+		this._queueLen = 0;
+		this._afterQueue = {};
+		this._afterQueueLen = 0;
+
+		var self = this;
+		this.drain = function() {
+			self._drain();
+		};
+	}
+
+	/**
+	 * Enqueue a task
+	 * @param {{ run:function }} task
+	 */
+	Scheduler.prototype.enqueue = function(task) {
+		this._queue[this._queueLen++] = task;
+		this.run();
+	};
+
+	/**
+	 * Enqueue a task to run after the main task queue
+	 * @param {{ run:function }} task
+	 */
+	Scheduler.prototype.afterQueue = function(task) {
+		this._afterQueue[this._afterQueueLen++] = task;
+		this.run();
+	};
+
+	Scheduler.prototype.run = function() {
+		if (!this._running) {
+			this._running = true;
+			this._async(this.drain);
+		}
+	};
+
+	/**
+	 * Drain the handler queue entirely, and then the after queue
+	 */
+	Scheduler.prototype._drain = function() {
+		var i = 0;
+		for (; i < this._queueLen; ++i) {
+			this._queue[i].run();
+			this._queue[i] = void 0;
+		}
+
+		this._queueLen = 0;
+		this._running = false;
+
+		for (i = 0; i < this._afterQueueLen; ++i) {
+			this._afterQueue[i].run();
+			this._afterQueue[i] = void 0;
+		}
+
+		this._afterQueueLen = 0;
+	};
+
+	return Scheduler;
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+},{}],178:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	/**
+	 * Custom error type for promises rejected by promise.timeout
+	 * @param {string} message
+	 * @constructor
+	 */
+	function TimeoutError (message) {
+		Error.call(this);
+		this.message = message;
+		this.name = TimeoutError.name;
+		if (typeof Error.captureStackTrace === 'function') {
+			Error.captureStackTrace(this, TimeoutError);
+		}
+	}
+
+	TimeoutError.prototype = Object.create(Error.prototype);
+	TimeoutError.prototype.constructor = TimeoutError;
+
+	return TimeoutError;
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+},{}],179:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	makeApply.tryCatchResolve = tryCatchResolve;
+
+	return makeApply;
+
+	function makeApply(Promise, call) {
+		if(arguments.length < 2) {
+			call = tryCatchResolve;
+		}
+
+		return apply;
+
+		function apply(f, thisArg, args) {
+			var p = Promise._defer();
+			var l = args.length;
+			var params = new Array(l);
+			callAndResolve({ f:f, thisArg:thisArg, args:args, params:params, i:l-1, call:call }, p._handler);
+
+			return p;
+		}
+
+		function callAndResolve(c, h) {
+			if(c.i < 0) {
+				return call(c.f, c.thisArg, c.params, h);
+			}
+
+			var handler = Promise._handler(c.args[c.i]);
+			handler.fold(callAndResolveNext, c, void 0, h);
+		}
+
+		function callAndResolveNext(c, x, h) {
+			c.params[c.i] = x;
+			c.i -= 1;
+			callAndResolve(c, h);
+		}
+	}
+
+	function tryCatchResolve(f, thisArg, args, resolver) {
+		try {
+			resolver.resolve(f.apply(thisArg, args));
+		} catch(e) {
+			resolver.reject(e);
+		}
+	}
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+
+
+},{}],180:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function(require) {
+
+	var state = require('../state');
+	var applier = require('../apply');
+
+	return function array(Promise) {
+
+		var applyFold = applier(Promise);
+		var toPromise = Promise.resolve;
+		var all = Promise.all;
+
+		var ar = Array.prototype.reduce;
+		var arr = Array.prototype.reduceRight;
+		var slice = Array.prototype.slice;
+
+		// Additional array combinators
+
+		Promise.any = any;
+		Promise.some = some;
+		Promise.settle = settle;
+
+		Promise.map = map;
+		Promise.filter = filter;
+		Promise.reduce = reduce;
+		Promise.reduceRight = reduceRight;
+
+		/**
+		 * When this promise fulfills with an array, do
+		 * onFulfilled.apply(void 0, array)
+		 * @param {function} onFulfilled function to apply
+		 * @returns {Promise} promise for the result of applying onFulfilled
+		 */
+		Promise.prototype.spread = function(onFulfilled) {
+			return this.then(all).then(function(array) {
+				return onFulfilled.apply(this, array);
+			});
+		};
+
+		return Promise;
+
+		/**
+		 * One-winner competitive race.
+		 * Return a promise that will fulfill when one of the promises
+		 * in the input array fulfills, or will reject when all promises
+		 * have rejected.
+		 * @param {array} promises
+		 * @returns {Promise} promise for the first fulfilled value
+		 */
+		function any(promises) {
+			var p = Promise._defer();
+			var resolver = p._handler;
+			var l = promises.length>>>0;
+
+			var pending = l;
+			var errors = [];
+
+			for (var h, x, i = 0; i < l; ++i) {
+				x = promises[i];
+				if(x === void 0 && !(i in promises)) {
+					--pending;
+					continue;
+				}
+
+				h = Promise._handler(x);
+				if(h.state() > 0) {
+					resolver.become(h);
+					Promise._visitRemaining(promises, i, h);
+					break;
+				} else {
+					h.visit(resolver, handleFulfill, handleReject);
+				}
+			}
+
+			if(pending === 0) {
+				resolver.reject(new RangeError('any(): array must not be empty'));
+			}
+
+			return p;
+
+			function handleFulfill(x) {
+				/*jshint validthis:true*/
+				errors = null;
+				this.resolve(x); // this === resolver
+			}
+
+			function handleReject(e) {
+				/*jshint validthis:true*/
+				if(this.resolved) { // this === resolver
+					return;
+				}
+
+				errors.push(e);
+				if(--pending === 0) {
+					this.reject(errors);
+				}
+			}
+		}
+
+		/**
+		 * N-winner competitive race
+		 * Return a promise that will fulfill when n input promises have
+		 * fulfilled, or will reject when it becomes impossible for n
+		 * input promises to fulfill (ie when promises.length - n + 1
+		 * have rejected)
+		 * @param {array} promises
+		 * @param {number} n
+		 * @returns {Promise} promise for the earliest n fulfillment values
+		 *
+		 * @deprecated
+		 */
+		function some(promises, n) {
+			/*jshint maxcomplexity:7*/
+			var p = Promise._defer();
+			var resolver = p._handler;
+
+			var results = [];
+			var errors = [];
+
+			var l = promises.length>>>0;
+			var nFulfill = 0;
+			var nReject;
+			var x, i; // reused in both for() loops
+
+			// First pass: count actual array items
+			for(i=0; i<l; ++i) {
+				x = promises[i];
+				if(x === void 0 && !(i in promises)) {
+					continue;
+				}
+				++nFulfill;
+			}
+
+			// Compute actual goals
+			n = Math.max(n, 0);
+			nReject = (nFulfill - n + 1);
+			nFulfill = Math.min(n, nFulfill);
+
+			if(n > nFulfill) {
+				resolver.reject(new RangeError('some(): array must contain at least '
+				+ n + ' item(s), but had ' + nFulfill));
+			} else if(nFulfill === 0) {
+				resolver.resolve(results);
+			}
+
+			// Second pass: observe each array item, make progress toward goals
+			for(i=0; i<l; ++i) {
+				x = promises[i];
+				if(x === void 0 && !(i in promises)) {
+					continue;
+				}
+
+				Promise._handler(x).visit(resolver, fulfill, reject, resolver.notify);
+			}
+
+			return p;
+
+			function fulfill(x) {
+				/*jshint validthis:true*/
+				if(this.resolved) { // this === resolver
+					return;
+				}
+
+				results.push(x);
+				if(--nFulfill === 0) {
+					errors = null;
+					this.resolve(results);
+				}
+			}
+
+			function reject(e) {
+				/*jshint validthis:true*/
+				if(this.resolved) { // this === resolver
+					return;
+				}
+
+				errors.push(e);
+				if(--nReject === 0) {
+					results = null;
+					this.reject(errors);
+				}
+			}
+		}
+
+		/**
+		 * Apply f to the value of each promise in a list of promises
+		 * and return a new list containing the results.
+		 * @param {array} promises
+		 * @param {function(x:*, index:Number):*} f mapping function
+		 * @returns {Promise}
+		 */
+		function map(promises, f) {
+			return Promise._traverse(f, promises);
+		}
+
+		/**
+		 * Filter the provided array of promises using the provided predicate.  Input may
+		 * contain promises and values
+		 * @param {Array} promises array of promises and values
+		 * @param {function(x:*, index:Number):boolean} predicate filtering predicate.
+		 *  Must return truthy (or promise for truthy) for items to retain.
+		 * @returns {Promise} promise that will fulfill with an array containing all items
+		 *  for which predicate returned truthy.
+		 */
+		function filter(promises, predicate) {
+			var a = slice.call(promises);
+			return Promise._traverse(predicate, a).then(function(keep) {
+				return filterSync(a, keep);
+			});
+		}
+
+		function filterSync(promises, keep) {
+			// Safe because we know all promises have fulfilled if we've made it this far
+			var l = keep.length;
+			var filtered = new Array(l);
+			for(var i=0, j=0; i<l; ++i) {
+				if(keep[i]) {
+					filtered[j++] = Promise._handler(promises[i]).value;
+				}
+			}
+			filtered.length = j;
+			return filtered;
+
+		}
+
+		/**
+		 * Return a promise that will always fulfill with an array containing
+		 * the outcome states of all input promises.  The returned promise
+		 * will never reject.
+		 * @param {Array} promises
+		 * @returns {Promise} promise for array of settled state descriptors
+		 */
+		function settle(promises) {
+			return all(promises.map(settleOne));
+		}
+
+		function settleOne(p) {
+			var h = Promise._handler(p);
+			if(h.state() === 0) {
+				return toPromise(p).then(state.fulfilled, state.rejected);
+			}
+
+			h._unreport();
+			return state.inspect(h);
+		}
+
+		/**
+		 * Traditional reduce function, similar to `Array.prototype.reduce()`, but
+		 * input may contain promises and/or values, and reduceFunc
+		 * may return either a value or a promise, *and* initialValue may
+		 * be a promise for the starting value.
+		 * @param {Array|Promise} promises array or promise for an array of anything,
+		 *      may contain a mix of promises and values.
+		 * @param {function(accumulated:*, x:*, index:Number):*} f reduce function
+		 * @returns {Promise} that will resolve to the final reduced value
+		 */
+		function reduce(promises, f /*, initialValue */) {
+			return arguments.length > 2 ? ar.call(promises, liftCombine(f), arguments[2])
+					: ar.call(promises, liftCombine(f));
+		}
+
+		/**
+		 * Traditional reduce function, similar to `Array.prototype.reduceRight()`, but
+		 * input may contain promises and/or values, and reduceFunc
+		 * may return either a value or a promise, *and* initialValue may
+		 * be a promise for the starting value.
+		 * @param {Array|Promise} promises array or promise for an array of anything,
+		 *      may contain a mix of promises and values.
+		 * @param {function(accumulated:*, x:*, index:Number):*} f reduce function
+		 * @returns {Promise} that will resolve to the final reduced value
+		 */
+		function reduceRight(promises, f /*, initialValue */) {
+			return arguments.length > 2 ? arr.call(promises, liftCombine(f), arguments[2])
+					: arr.call(promises, liftCombine(f));
+		}
+
+		function liftCombine(f) {
+			return function(z, x, i) {
+				return applyFold(f, void 0, [z,x,i]);
+			};
+		}
+	};
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(require); }));
+
+},{"../apply":179,"../state":192}],181:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	return function flow(Promise) {
+
+		var resolve = Promise.resolve;
+		var reject = Promise.reject;
+		var origCatch = Promise.prototype['catch'];
+
+		/**
+		 * Handle the ultimate fulfillment value or rejection reason, and assume
+		 * responsibility for all errors.  If an error propagates out of result
+		 * or handleFatalError, it will be rethrown to the host, resulting in a
+		 * loud stack track on most platforms and a crash on some.
+		 * @param {function?} onResult
+		 * @param {function?} onError
+		 * @returns {undefined}
+		 */
+		Promise.prototype.done = function(onResult, onError) {
+			this._handler.visit(this._handler.receiver, onResult, onError);
+		};
+
+		/**
+		 * Add Error-type and predicate matching to catch.  Examples:
+		 * promise.catch(TypeError, handleTypeError)
+		 *   .catch(predicate, handleMatchedErrors)
+		 *   .catch(handleRemainingErrors)
+		 * @param onRejected
+		 * @returns {*}
+		 */
+		Promise.prototype['catch'] = Promise.prototype.otherwise = function(onRejected) {
+			if (arguments.length < 2) {
+				return origCatch.call(this, onRejected);
+			}
+
+			if(typeof onRejected !== 'function') {
+				return this.ensure(rejectInvalidPredicate);
+			}
+
+			return origCatch.call(this, createCatchFilter(arguments[1], onRejected));
+		};
+
+		/**
+		 * Wraps the provided catch handler, so that it will only be called
+		 * if the predicate evaluates truthy
+		 * @param {?function} handler
+		 * @param {function} predicate
+		 * @returns {function} conditional catch handler
+		 */
+		function createCatchFilter(handler, predicate) {
+			return function(e) {
+				return evaluatePredicate(e, predicate)
+					? handler.call(this, e)
+					: reject(e);
+			};
+		}
+
+		/**
+		 * Ensures that onFulfilledOrRejected will be called regardless of whether
+		 * this promise is fulfilled or rejected.  onFulfilledOrRejected WILL NOT
+		 * receive the promises' value or reason.  Any returned value will be disregarded.
+		 * onFulfilledOrRejected may throw or return a rejected promise to signal
+		 * an additional error.
+		 * @param {function} handler handler to be called regardless of
+		 *  fulfillment or rejection
+		 * @returns {Promise}
+		 */
+		Promise.prototype['finally'] = Promise.prototype.ensure = function(handler) {
+			if(typeof handler !== 'function') {
+				return this;
+			}
+
+			return this.then(function(x) {
+				return runSideEffect(handler, this, identity, x);
+			}, function(e) {
+				return runSideEffect(handler, this, reject, e);
+			});
+		};
+
+		function runSideEffect (handler, thisArg, propagate, value) {
+			var result = handler.call(thisArg);
+			return maybeThenable(result)
+				? propagateValue(result, propagate, value)
+				: propagate(value);
+		}
+
+		function propagateValue (result, propagate, x) {
+			return resolve(result).then(function () {
+				return propagate(x);
+			});
+		}
+
+		/**
+		 * Recover from a failure by returning a defaultValue.  If defaultValue
+		 * is a promise, it's fulfillment value will be used.  If defaultValue is
+		 * a promise that rejects, the returned promise will reject with the
+		 * same reason.
+		 * @param {*} defaultValue
+		 * @returns {Promise} new promise
+		 */
+		Promise.prototype['else'] = Promise.prototype.orElse = function(defaultValue) {
+			return this.then(void 0, function() {
+				return defaultValue;
+			});
+		};
+
+		/**
+		 * Shortcut for .then(function() { return value; })
+		 * @param  {*} value
+		 * @return {Promise} a promise that:
+		 *  - is fulfilled if value is not a promise, or
+		 *  - if value is a promise, will fulfill with its value, or reject
+		 *    with its reason.
+		 */
+		Promise.prototype['yield'] = function(value) {
+			return this.then(function() {
+				return value;
+			});
+		};
+
+		/**
+		 * Runs a side effect when this promise fulfills, without changing the
+		 * fulfillment value.
+		 * @param {function} onFulfilledSideEffect
+		 * @returns {Promise}
+		 */
+		Promise.prototype.tap = function(onFulfilledSideEffect) {
+			return this.then(onFulfilledSideEffect)['yield'](this);
+		};
+
+		return Promise;
+	};
+
+	function rejectInvalidPredicate() {
+		throw new TypeError('catch predicate must be a function');
+	}
+
+	function evaluatePredicate(e, predicate) {
+		return isError(predicate) ? e instanceof predicate : predicate(e);
+	}
+
+	function isError(predicate) {
+		return predicate === Error
+			|| (predicate != null && predicate.prototype instanceof Error);
+	}
+
+	function maybeThenable(x) {
+		return (typeof x === 'object' || typeof x === 'function') && x !== null;
+	}
+
+	function identity(x) {
+		return x;
+	}
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+},{}],182:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+/** @author Jeff Escalante */
+
+(function(define) { 'use strict';
+define(function() {
+
+	return function fold(Promise) {
+
+		Promise.prototype.fold = function(f, z) {
+			var promise = this._beget();
+
+			this._handler.fold(function(z, x, to) {
+				Promise._handler(z).fold(function(x, z, to) {
+					to.resolve(f.call(this, z, x));
+				}, x, this, to);
+			}, z, promise._handler.receiver, promise._handler);
+
+			return promise;
+		};
+
+		return Promise;
+	};
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+},{}],183:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function(require) {
+
+	var inspect = require('../state').inspect;
+
+	return function inspection(Promise) {
+
+		Promise.prototype.inspect = function() {
+			return inspect(Promise._handler(this));
+		};
+
+		return Promise;
+	};
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(require); }));
+
+},{"../state":192}],184:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	return function generate(Promise) {
+
+		var resolve = Promise.resolve;
+
+		Promise.iterate = iterate;
+		Promise.unfold = unfold;
+
+		return Promise;
+
+		/**
+		 * @deprecated Use github.com/cujojs/most streams and most.iterate
+		 * Generate a (potentially infinite) stream of promised values:
+		 * x, f(x), f(f(x)), etc. until condition(x) returns true
+		 * @param {function} f function to generate a new x from the previous x
+		 * @param {function} condition function that, given the current x, returns
+		 *  truthy when the iterate should stop
+		 * @param {function} handler function to handle the value produced by f
+		 * @param {*|Promise} x starting value, may be a promise
+		 * @return {Promise} the result of the last call to f before
+		 *  condition returns true
+		 */
+		function iterate(f, condition, handler, x) {
+			return unfold(function(x) {
+				return [x, f(x)];
+			}, condition, handler, x);
+		}
+
+		/**
+		 * @deprecated Use github.com/cujojs/most streams and most.unfold
+		 * Generate a (potentially infinite) stream of promised values
+		 * by applying handler(generator(seed)) iteratively until
+		 * condition(seed) returns true.
+		 * @param {function} unspool function that generates a [value, newSeed]
+		 *  given a seed.
+		 * @param {function} condition function that, given the current seed, returns
+		 *  truthy when the unfold should stop
+		 * @param {function} handler function to handle the value produced by unspool
+		 * @param x {*|Promise} starting value, may be a promise
+		 * @return {Promise} the result of the last value produced by unspool before
+		 *  condition returns true
+		 */
+		function unfold(unspool, condition, handler, x) {
+			return resolve(x).then(function(seed) {
+				return resolve(condition(seed)).then(function(done) {
+					return done ? seed : resolve(unspool(seed)).spread(next);
+				});
+			});
+
+			function next(item, newSeed) {
+				return resolve(handler(item)).then(function() {
+					return unfold(unspool, condition, handler, newSeed);
+				});
+			}
+		}
+	};
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+},{}],185:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	return function progress(Promise) {
+
+		/**
+		 * @deprecated
+		 * Register a progress handler for this promise
+		 * @param {function} onProgress
+		 * @returns {Promise}
+		 */
+		Promise.prototype.progress = function(onProgress) {
+			return this.then(void 0, void 0, onProgress);
+		};
+
+		return Promise;
+	};
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+},{}],186:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function(require) {
+
+	var env = require('../env');
+	var TimeoutError = require('../TimeoutError');
+
+	function setTimeout(f, ms, x, y) {
+		return env.setTimer(function() {
+			f(x, y, ms);
+		}, ms);
+	}
+
+	return function timed(Promise) {
+		/**
+		 * Return a new promise whose fulfillment value is revealed only
+		 * after ms milliseconds
+		 * @param {number} ms milliseconds
+		 * @returns {Promise}
+		 */
+		Promise.prototype.delay = function(ms) {
+			var p = this._beget();
+			this._handler.fold(handleDelay, ms, void 0, p._handler);
+			return p;
+		};
+
+		function handleDelay(ms, x, h) {
+			setTimeout(resolveDelay, ms, x, h);
+		}
+
+		function resolveDelay(x, h) {
+			h.resolve(x);
+		}
+
+		/**
+		 * Return a new promise that rejects after ms milliseconds unless
+		 * this promise fulfills earlier, in which case the returned promise
+		 * fulfills with the same value.
+		 * @param {number} ms milliseconds
+		 * @param {Error|*=} reason optional rejection reason to use, defaults
+		 *   to a TimeoutError if not provided
+		 * @returns {Promise}
+		 */
+		Promise.prototype.timeout = function(ms, reason) {
+			var p = this._beget();
+			var h = p._handler;
+
+			var t = setTimeout(onTimeout, ms, reason, p._handler);
+
+			this._handler.visit(h,
+				function onFulfill(x) {
+					env.clearTimer(t);
+					this.resolve(x); // this = h
+				},
+				function onReject(x) {
+					env.clearTimer(t);
+					this.reject(x); // this = h
+				},
+				h.notify);
+
+			return p;
+		};
+
+		function onTimeout(reason, h, ms) {
+			var e = typeof reason === 'undefined'
+				? new TimeoutError('timed out after ' + ms + 'ms')
+				: reason;
+			h.reject(e);
+		}
+
+		return Promise;
+	};
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(require); }));
+
+},{"../TimeoutError":178,"../env":189}],187:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function(require) {
+
+	var setTimer = require('../env').setTimer;
+	var format = require('../format');
+
+	return function unhandledRejection(Promise) {
+
+		var logError = noop;
+		var logInfo = noop;
+		var localConsole;
+
+		if(typeof console !== 'undefined') {
+			// Alias console to prevent things like uglify's drop_console option from
+			// removing console.log/error. Unhandled rejections fall into the same
+			// category as uncaught exceptions, and build tools shouldn't silence them.
+			localConsole = console;
+			logError = typeof localConsole.error !== 'undefined'
+				? function (e) { localConsole.error(e); }
+				: function (e) { localConsole.log(e); };
+
+			logInfo = typeof localConsole.info !== 'undefined'
+				? function (e) { localConsole.info(e); }
+				: function (e) { localConsole.log(e); };
+		}
+
+		Promise.onPotentiallyUnhandledRejection = function(rejection) {
+			enqueue(report, rejection);
+		};
+
+		Promise.onPotentiallyUnhandledRejectionHandled = function(rejection) {
+			enqueue(unreport, rejection);
+		};
+
+		Promise.onFatalRejection = function(rejection) {
+			enqueue(throwit, rejection.value);
+		};
+
+		var tasks = [];
+		var reported = [];
+		var running = null;
+
+		function report(r) {
+			if(!r.handled) {
+				reported.push(r);
+				logError('Potentially unhandled rejection [' + r.id + '] ' + format.formatError(r.value));
+			}
+		}
+
+		function unreport(r) {
+			var i = reported.indexOf(r);
+			if(i >= 0) {
+				reported.splice(i, 1);
+				logInfo('Handled previous rejection [' + r.id + '] ' + format.formatObject(r.value));
+			}
+		}
+
+		function enqueue(f, x) {
+			tasks.push(f, x);
+			if(running === null) {
+				running = setTimer(flush, 0);
+			}
+		}
+
+		function flush() {
+			running = null;
+			while(tasks.length > 0) {
+				tasks.shift()(tasks.shift());
+			}
+		}
+
+		return Promise;
+	};
+
+	function throwit(e) {
+		throw e;
+	}
+
+	function noop() {}
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(require); }));
+
+},{"../env":189,"../format":190}],188:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	return function addWith(Promise) {
+		/**
+		 * Returns a promise whose handlers will be called with `this` set to
+		 * the supplied receiver.  Subsequent promises derived from the
+		 * returned promise will also have their handlers called with receiver
+		 * as `this`. Calling `with` with undefined or no arguments will return
+		 * a promise whose handlers will again be called in the usual Promises/A+
+		 * way (no `this`) thus safely undoing any previous `with` in the
+		 * promise chain.
+		 *
+		 * WARNING: Promises returned from `with`/`withThis` are NOT Promises/A+
+		 * compliant, specifically violating 2.2.5 (http://promisesaplus.com/#point-41)
+		 *
+		 * @param {object} receiver `this` value for all handlers attached to
+		 *  the returned promise.
+		 * @returns {Promise}
+		 */
+		Promise.prototype['with'] = Promise.prototype.withThis = function(receiver) {
+			var p = this._beget();
+			var child = p._handler;
+			child.receiver = receiver;
+			this._handler.chain(child, receiver);
+			return p;
+		};
+
+		return Promise;
+	};
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+
+},{}],189:[function(require,module,exports){
+(function (process){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+/*global process,document,setTimeout,clearTimeout,MutationObserver,WebKitMutationObserver*/
+(function(define) { 'use strict';
+define(function(require) {
+	/*jshint maxcomplexity:6*/
+
+	// Sniff "best" async scheduling option
+	// Prefer process.nextTick or MutationObserver, then check for
+	// setTimeout, and finally vertx, since its the only env that doesn't
+	// have setTimeout
+
+	var MutationObs;
+	var capturedSetTimeout = typeof setTimeout !== 'undefined' && setTimeout;
+
+	// Default env
+	var setTimer = function(f, ms) { return setTimeout(f, ms); };
+	var clearTimer = function(t) { return clearTimeout(t); };
+	var asap = function (f) { return capturedSetTimeout(f, 0); };
+
+	// Detect specific env
+	if (isNode()) { // Node
+		asap = function (f) { return process.nextTick(f); };
+
+	} else if (MutationObs = hasMutationObserver()) { // Modern browser
+		asap = initMutationObserver(MutationObs);
+
+	} else if (!capturedSetTimeout) { // vert.x
+		var vertxRequire = require;
+		var vertx = vertxRequire('vertx');
+		setTimer = function (f, ms) { return vertx.setTimer(ms, f); };
+		clearTimer = vertx.cancelTimer;
+		asap = vertx.runOnLoop || vertx.runOnContext;
+	}
+
+	return {
+		setTimer: setTimer,
+		clearTimer: clearTimer,
+		asap: asap
+	};
+
+	function isNode () {
+		return typeof process !== 'undefined' &&
+			Object.prototype.toString.call(process) === '[object process]';
+	}
+
+	function hasMutationObserver () {
+		return (typeof MutationObserver === 'function' && MutationObserver) ||
+			(typeof WebKitMutationObserver === 'function' && WebKitMutationObserver);
+	}
+
+	function initMutationObserver(MutationObserver) {
+		var scheduled;
+		var node = document.createTextNode('');
+		var o = new MutationObserver(run);
+		o.observe(node, { characterData: true });
+
+		function run() {
+			var f = scheduled;
+			scheduled = void 0;
+			f();
+		}
+
+		var i = 0;
+		return function (f) {
+			scheduled = f;
+			node.data = (i ^= 1);
+		};
+	}
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(require); }));
+
+}).call(this,require('_process'))
+
+},{"_process":1}],190:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	return {
+		formatError: formatError,
+		formatObject: formatObject,
+		tryStringify: tryStringify
+	};
+
+	/**
+	 * Format an error into a string.  If e is an Error and has a stack property,
+	 * it's returned.  Otherwise, e is formatted using formatObject, with a
+	 * warning added about e not being a proper Error.
+	 * @param {*} e
+	 * @returns {String} formatted string, suitable for output to developers
+	 */
+	function formatError(e) {
+		var s = typeof e === 'object' && e !== null && (e.stack || e.message) ? e.stack || e.message : formatObject(e);
+		return e instanceof Error ? s : s + ' (WARNING: non-Error used)';
+	}
+
+	/**
+	 * Format an object, detecting "plain" objects and running them through
+	 * JSON.stringify if possible.
+	 * @param {Object} o
+	 * @returns {string}
+	 */
+	function formatObject(o) {
+		var s = String(o);
+		if(s === '[object Object]' && typeof JSON !== 'undefined') {
+			s = tryStringify(o, s);
+		}
+		return s;
+	}
+
+	/**
+	 * Try to return the result of JSON.stringify(x).  If that fails, return
+	 * defaultValue
+	 * @param {*} x
+	 * @param {*} defaultValue
+	 * @returns {String|*} JSON.stringify(x) or defaultValue
+	 */
+	function tryStringify(x, defaultValue) {
+		try {
+			return JSON.stringify(x);
+		} catch(e) {
+			return defaultValue;
+		}
+	}
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+},{}],191:[function(require,module,exports){
+(function (process){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	return function makePromise(environment) {
+
+		var tasks = environment.scheduler;
+		var emitRejection = initEmitRejection();
+
+		var objectCreate = Object.create ||
+			function(proto) {
+				function Child() {}
+				Child.prototype = proto;
+				return new Child();
+			};
+
+		/**
+		 * Create a promise whose fate is determined by resolver
+		 * @constructor
+		 * @returns {Promise} promise
+		 * @name Promise
+		 */
+		function Promise(resolver, handler) {
+			this._handler = resolver === Handler ? handler : init(resolver);
+		}
+
+		/**
+		 * Run the supplied resolver
+		 * @param resolver
+		 * @returns {Pending}
+		 */
+		function init(resolver) {
+			var handler = new Pending();
+
+			try {
+				resolver(promiseResolve, promiseReject, promiseNotify);
+			} catch (e) {
+				promiseReject(e);
+			}
+
+			return handler;
+
+			/**
+			 * Transition from pre-resolution state to post-resolution state, notifying
+			 * all listeners of the ultimate fulfillment or rejection
+			 * @param {*} x resolution value
+			 */
+			function promiseResolve (x) {
+				handler.resolve(x);
+			}
+			/**
+			 * Reject this promise with reason, which will be used verbatim
+			 * @param {Error|*} reason rejection reason, strongly suggested
+			 *   to be an Error type
+			 */
+			function promiseReject (reason) {
+				handler.reject(reason);
+			}
+
+			/**
+			 * @deprecated
+			 * Issue a progress event, notifying all progress listeners
+			 * @param {*} x progress event payload to pass to all listeners
+			 */
+			function promiseNotify (x) {
+				handler.notify(x);
+			}
+		}
+
+		// Creation
+
+		Promise.resolve = resolve;
+		Promise.reject = reject;
+		Promise.never = never;
+
+		Promise._defer = defer;
+		Promise._handler = getHandler;
+
+		/**
+		 * Returns a trusted promise. If x is already a trusted promise, it is
+		 * returned, otherwise returns a new trusted Promise which follows x.
+		 * @param  {*} x
+		 * @return {Promise} promise
+		 */
+		function resolve(x) {
+			return isPromise(x) ? x
+				: new Promise(Handler, new Async(getHandler(x)));
+		}
+
+		/**
+		 * Return a reject promise with x as its reason (x is used verbatim)
+		 * @param {*} x
+		 * @returns {Promise} rejected promise
+		 */
+		function reject(x) {
+			return new Promise(Handler, new Async(new Rejected(x)));
+		}
+
+		/**
+		 * Return a promise that remains pending forever
+		 * @returns {Promise} forever-pending promise.
+		 */
+		function never() {
+			return foreverPendingPromise; // Should be frozen
+		}
+
+		/**
+		 * Creates an internal {promise, resolver} pair
+		 * @private
+		 * @returns {Promise}
+		 */
+		function defer() {
+			return new Promise(Handler, new Pending());
+		}
+
+		// Transformation and flow control
+
+		/**
+		 * Transform this promise's fulfillment value, returning a new Promise
+		 * for the transformed result.  If the promise cannot be fulfilled, onRejected
+		 * is called with the reason.  onProgress *may* be called with updates toward
+		 * this promise's fulfillment.
+		 * @param {function=} onFulfilled fulfillment handler
+		 * @param {function=} onRejected rejection handler
+		 * @param {function=} onProgress @deprecated progress handler
+		 * @return {Promise} new promise
+		 */
+		Promise.prototype.then = function(onFulfilled, onRejected, onProgress) {
+			var parent = this._handler;
+			var state = parent.join().state();
+
+			if ((typeof onFulfilled !== 'function' && state > 0) ||
+				(typeof onRejected !== 'function' && state < 0)) {
+				// Short circuit: value will not change, simply share handler
+				return new this.constructor(Handler, parent);
+			}
+
+			var p = this._beget();
+			var child = p._handler;
+
+			parent.chain(child, parent.receiver, onFulfilled, onRejected, onProgress);
+
+			return p;
+		};
+
+		/**
+		 * If this promise cannot be fulfilled due to an error, call onRejected to
+		 * handle the error. Shortcut for .then(undefined, onRejected)
+		 * @param {function?} onRejected
+		 * @return {Promise}
+		 */
+		Promise.prototype['catch'] = function(onRejected) {
+			return this.then(void 0, onRejected);
+		};
+
+		/**
+		 * Creates a new, pending promise of the same type as this promise
+		 * @private
+		 * @returns {Promise}
+		 */
+		Promise.prototype._beget = function() {
+			return begetFrom(this._handler, this.constructor);
+		};
+
+		function begetFrom(parent, Promise) {
+			var child = new Pending(parent.receiver, parent.join().context);
+			return new Promise(Handler, child);
+		}
+
+		// Array combinators
+
+		Promise.all = all;
+		Promise.race = race;
+		Promise._traverse = traverse;
+
+		/**
+		 * Return a promise that will fulfill when all promises in the
+		 * input array have fulfilled, or will reject when one of the
+		 * promises rejects.
+		 * @param {array} promises array of promises
+		 * @returns {Promise} promise for array of fulfillment values
+		 */
+		function all(promises) {
+			return traverseWith(snd, null, promises);
+		}
+
+		/**
+		 * Array<Promise<X>> -> Promise<Array<f(X)>>
+		 * @private
+		 * @param {function} f function to apply to each promise's value
+		 * @param {Array} promises array of promises
+		 * @returns {Promise} promise for transformed values
+		 */
+		function traverse(f, promises) {
+			return traverseWith(tryCatch2, f, promises);
+		}
+
+		function traverseWith(tryMap, f, promises) {
+			var handler = typeof f === 'function' ? mapAt : settleAt;
+
+			var resolver = new Pending();
+			var pending = promises.length >>> 0;
+			var results = new Array(pending);
+
+			for (var i = 0, x; i < promises.length && !resolver.resolved; ++i) {
+				x = promises[i];
+
+				if (x === void 0 && !(i in promises)) {
+					--pending;
+					continue;
+				}
+
+				traverseAt(promises, handler, i, x, resolver);
+			}
+
+			if(pending === 0) {
+				resolver.become(new Fulfilled(results));
+			}
+
+			return new Promise(Handler, resolver);
+
+			function mapAt(i, x, resolver) {
+				if(!resolver.resolved) {
+					traverseAt(promises, settleAt, i, tryMap(f, x, i), resolver);
+				}
+			}
+
+			function settleAt(i, x, resolver) {
+				results[i] = x;
+				if(--pending === 0) {
+					resolver.become(new Fulfilled(results));
+				}
+			}
+		}
+
+		function traverseAt(promises, handler, i, x, resolver) {
+			if (maybeThenable(x)) {
+				var h = getHandlerMaybeThenable(x);
+				var s = h.state();
+
+				if (s === 0) {
+					h.fold(handler, i, void 0, resolver);
+				} else if (s > 0) {
+					handler(i, h.value, resolver);
+				} else {
+					resolver.become(h);
+					visitRemaining(promises, i+1, h);
+				}
+			} else {
+				handler(i, x, resolver);
+			}
+		}
+
+		Promise._visitRemaining = visitRemaining;
+		function visitRemaining(promises, start, handler) {
+			for(var i=start; i<promises.length; ++i) {
+				markAsHandled(getHandler(promises[i]), handler);
+			}
+		}
+
+		function markAsHandled(h, handler) {
+			if(h === handler) {
+				return;
+			}
+
+			var s = h.state();
+			if(s === 0) {
+				h.visit(h, void 0, h._unreport);
+			} else if(s < 0) {
+				h._unreport();
+			}
+		}
+
+		/**
+		 * Fulfill-reject competitive race. Return a promise that will settle
+		 * to the same state as the earliest input promise to settle.
+		 *
+		 * WARNING: The ES6 Promise spec requires that race()ing an empty array
+		 * must return a promise that is pending forever.  This implementation
+		 * returns a singleton forever-pending promise, the same singleton that is
+		 * returned by Promise.never(), thus can be checked with ===
+		 *
+		 * @param {array} promises array of promises to race
+		 * @returns {Promise} if input is non-empty, a promise that will settle
+		 * to the same outcome as the earliest input promise to settle. if empty
+		 * is empty, returns a promise that will never settle.
+		 */
+		function race(promises) {
+			if(typeof promises !== 'object' || promises === null) {
+				return reject(new TypeError('non-iterable passed to race()'));
+			}
+
+			// Sigh, race([]) is untestable unless we return *something*
+			// that is recognizable without calling .then() on it.
+			return promises.length === 0 ? never()
+				 : promises.length === 1 ? resolve(promises[0])
+				 : runRace(promises);
+		}
+
+		function runRace(promises) {
+			var resolver = new Pending();
+			var i, x, h;
+			for(i=0; i<promises.length; ++i) {
+				x = promises[i];
+				if (x === void 0 && !(i in promises)) {
+					continue;
+				}
+
+				h = getHandler(x);
+				if(h.state() !== 0) {
+					resolver.become(h);
+					visitRemaining(promises, i+1, h);
+					break;
+				} else {
+					h.visit(resolver, resolver.resolve, resolver.reject);
+				}
+			}
+			return new Promise(Handler, resolver);
+		}
+
+		// Promise internals
+		// Below this, everything is @private
+
+		/**
+		 * Get an appropriate handler for x, without checking for cycles
+		 * @param {*} x
+		 * @returns {object} handler
+		 */
+		function getHandler(x) {
+			if(isPromise(x)) {
+				return x._handler.join();
+			}
+			return maybeThenable(x) ? getHandlerUntrusted(x) : new Fulfilled(x);
+		}
+
+		/**
+		 * Get a handler for thenable x.
+		 * NOTE: You must only call this if maybeThenable(x) == true
+		 * @param {object|function|Promise} x
+		 * @returns {object} handler
+		 */
+		function getHandlerMaybeThenable(x) {
+			return isPromise(x) ? x._handler.join() : getHandlerUntrusted(x);
+		}
+
+		/**
+		 * Get a handler for potentially untrusted thenable x
+		 * @param {*} x
+		 * @returns {object} handler
+		 */
+		function getHandlerUntrusted(x) {
+			try {
+				var untrustedThen = x.then;
+				return typeof untrustedThen === 'function'
+					? new Thenable(untrustedThen, x)
+					: new Fulfilled(x);
+			} catch(e) {
+				return new Rejected(e);
+			}
+		}
+
+		/**
+		 * Handler for a promise that is pending forever
+		 * @constructor
+		 */
+		function Handler() {}
+
+		Handler.prototype.when
+			= Handler.prototype.become
+			= Handler.prototype.notify // deprecated
+			= Handler.prototype.fail
+			= Handler.prototype._unreport
+			= Handler.prototype._report
+			= noop;
+
+		Handler.prototype._state = 0;
+
+		Handler.prototype.state = function() {
+			return this._state;
+		};
+
+		/**
+		 * Recursively collapse handler chain to find the handler
+		 * nearest to the fully resolved value.
+		 * @returns {object} handler nearest the fully resolved value
+		 */
+		Handler.prototype.join = function() {
+			var h = this;
+			while(h.handler !== void 0) {
+				h = h.handler;
+			}
+			return h;
+		};
+
+		Handler.prototype.chain = function(to, receiver, fulfilled, rejected, progress) {
+			this.when({
+				resolver: to,
+				receiver: receiver,
+				fulfilled: fulfilled,
+				rejected: rejected,
+				progress: progress
+			});
+		};
+
+		Handler.prototype.visit = function(receiver, fulfilled, rejected, progress) {
+			this.chain(failIfRejected, receiver, fulfilled, rejected, progress);
+		};
+
+		Handler.prototype.fold = function(f, z, c, to) {
+			this.when(new Fold(f, z, c, to));
+		};
+
+		/**
+		 * Handler that invokes fail() on any handler it becomes
+		 * @constructor
+		 */
+		function FailIfRejected() {}
+
+		inherit(Handler, FailIfRejected);
+
+		FailIfRejected.prototype.become = function(h) {
+			h.fail();
+		};
+
+		var failIfRejected = new FailIfRejected();
+
+		/**
+		 * Handler that manages a queue of consumers waiting on a pending promise
+		 * @constructor
+		 */
+		function Pending(receiver, inheritedContext) {
+			Promise.createContext(this, inheritedContext);
+
+			this.consumers = void 0;
+			this.receiver = receiver;
+			this.handler = void 0;
+			this.resolved = false;
+		}
+
+		inherit(Handler, Pending);
+
+		Pending.prototype._state = 0;
+
+		Pending.prototype.resolve = function(x) {
+			this.become(getHandler(x));
+		};
+
+		Pending.prototype.reject = function(x) {
+			if(this.resolved) {
+				return;
+			}
+
+			this.become(new Rejected(x));
+		};
+
+		Pending.prototype.join = function() {
+			if (!this.resolved) {
+				return this;
+			}
+
+			var h = this;
+
+			while (h.handler !== void 0) {
+				h = h.handler;
+				if (h === this) {
+					return this.handler = cycle();
+				}
+			}
+
+			return h;
+		};
+
+		Pending.prototype.run = function() {
+			var q = this.consumers;
+			var handler = this.handler;
+			this.handler = this.handler.join();
+			this.consumers = void 0;
+
+			for (var i = 0; i < q.length; ++i) {
+				handler.when(q[i]);
+			}
+		};
+
+		Pending.prototype.become = function(handler) {
+			if(this.resolved) {
+				return;
+			}
+
+			this.resolved = true;
+			this.handler = handler;
+			if(this.consumers !== void 0) {
+				tasks.enqueue(this);
+			}
+
+			if(this.context !== void 0) {
+				handler._report(this.context);
+			}
+		};
+
+		Pending.prototype.when = function(continuation) {
+			if(this.resolved) {
+				tasks.enqueue(new ContinuationTask(continuation, this.handler));
+			} else {
+				if(this.consumers === void 0) {
+					this.consumers = [continuation];
+				} else {
+					this.consumers.push(continuation);
+				}
+			}
+		};
+
+		/**
+		 * @deprecated
+		 */
+		Pending.prototype.notify = function(x) {
+			if(!this.resolved) {
+				tasks.enqueue(new ProgressTask(x, this));
+			}
+		};
+
+		Pending.prototype.fail = function(context) {
+			var c = typeof context === 'undefined' ? this.context : context;
+			this.resolved && this.handler.join().fail(c);
+		};
+
+		Pending.prototype._report = function(context) {
+			this.resolved && this.handler.join()._report(context);
+		};
+
+		Pending.prototype._unreport = function() {
+			this.resolved && this.handler.join()._unreport();
+		};
+
+		/**
+		 * Wrap another handler and force it into a future stack
+		 * @param {object} handler
+		 * @constructor
+		 */
+		function Async(handler) {
+			this.handler = handler;
+		}
+
+		inherit(Handler, Async);
+
+		Async.prototype.when = function(continuation) {
+			tasks.enqueue(new ContinuationTask(continuation, this));
+		};
+
+		Async.prototype._report = function(context) {
+			this.join()._report(context);
+		};
+
+		Async.prototype._unreport = function() {
+			this.join()._unreport();
+		};
+
+		/**
+		 * Handler that wraps an untrusted thenable and assimilates it in a future stack
+		 * @param {function} then
+		 * @param {{then: function}} thenable
+		 * @constructor
+		 */
+		function Thenable(then, thenable) {
+			Pending.call(this);
+			tasks.enqueue(new AssimilateTask(then, thenable, this));
+		}
+
+		inherit(Pending, Thenable);
+
+		/**
+		 * Handler for a fulfilled promise
+		 * @param {*} x fulfillment value
+		 * @constructor
+		 */
+		function Fulfilled(x) {
+			Promise.createContext(this);
+			this.value = x;
+		}
+
+		inherit(Handler, Fulfilled);
+
+		Fulfilled.prototype._state = 1;
+
+		Fulfilled.prototype.fold = function(f, z, c, to) {
+			runContinuation3(f, z, this, c, to);
+		};
+
+		Fulfilled.prototype.when = function(cont) {
+			runContinuation1(cont.fulfilled, this, cont.receiver, cont.resolver);
+		};
+
+		var errorId = 0;
+
+		/**
+		 * Handler for a rejected promise
+		 * @param {*} x rejection reason
+		 * @constructor
+		 */
+		function Rejected(x) {
+			Promise.createContext(this);
+
+			this.id = ++errorId;
+			this.value = x;
+			this.handled = false;
+			this.reported = false;
+
+			this._report();
+		}
+
+		inherit(Handler, Rejected);
+
+		Rejected.prototype._state = -1;
+
+		Rejected.prototype.fold = function(f, z, c, to) {
+			to.become(this);
+		};
+
+		Rejected.prototype.when = function(cont) {
+			if(typeof cont.rejected === 'function') {
+				this._unreport();
+			}
+			runContinuation1(cont.rejected, this, cont.receiver, cont.resolver);
+		};
+
+		Rejected.prototype._report = function(context) {
+			tasks.afterQueue(new ReportTask(this, context));
+		};
+
+		Rejected.prototype._unreport = function() {
+			if(this.handled) {
+				return;
+			}
+			this.handled = true;
+			tasks.afterQueue(new UnreportTask(this));
+		};
+
+		Rejected.prototype.fail = function(context) {
+			this.reported = true;
+			emitRejection('unhandledRejection', this);
+			Promise.onFatalRejection(this, context === void 0 ? this.context : context);
+		};
+
+		function ReportTask(rejection, context) {
+			this.rejection = rejection;
+			this.context = context;
+		}
+
+		ReportTask.prototype.run = function() {
+			if(!this.rejection.handled && !this.rejection.reported) {
+				this.rejection.reported = true;
+				emitRejection('unhandledRejection', this.rejection) ||
+					Promise.onPotentiallyUnhandledRejection(this.rejection, this.context);
+			}
+		};
+
+		function UnreportTask(rejection) {
+			this.rejection = rejection;
+		}
+
+		UnreportTask.prototype.run = function() {
+			if(this.rejection.reported) {
+				emitRejection('rejectionHandled', this.rejection) ||
+					Promise.onPotentiallyUnhandledRejectionHandled(this.rejection);
+			}
+		};
+
+		// Unhandled rejection hooks
+		// By default, everything is a noop
+
+		Promise.createContext
+			= Promise.enterContext
+			= Promise.exitContext
+			= Promise.onPotentiallyUnhandledRejection
+			= Promise.onPotentiallyUnhandledRejectionHandled
+			= Promise.onFatalRejection
+			= noop;
+
+		// Errors and singletons
+
+		var foreverPendingHandler = new Handler();
+		var foreverPendingPromise = new Promise(Handler, foreverPendingHandler);
+
+		function cycle() {
+			return new Rejected(new TypeError('Promise cycle'));
+		}
+
+		// Task runners
+
+		/**
+		 * Run a single consumer
+		 * @constructor
+		 */
+		function ContinuationTask(continuation, handler) {
+			this.continuation = continuation;
+			this.handler = handler;
+		}
+
+		ContinuationTask.prototype.run = function() {
+			this.handler.join().when(this.continuation);
+		};
+
+		/**
+		 * Run a queue of progress handlers
+		 * @constructor
+		 */
+		function ProgressTask(value, handler) {
+			this.handler = handler;
+			this.value = value;
+		}
+
+		ProgressTask.prototype.run = function() {
+			var q = this.handler.consumers;
+			if(q === void 0) {
+				return;
+			}
+
+			for (var c, i = 0; i < q.length; ++i) {
+				c = q[i];
+				runNotify(c.progress, this.value, this.handler, c.receiver, c.resolver);
+			}
+		};
+
+		/**
+		 * Assimilate a thenable, sending it's value to resolver
+		 * @param {function} then
+		 * @param {object|function} thenable
+		 * @param {object} resolver
+		 * @constructor
+		 */
+		function AssimilateTask(then, thenable, resolver) {
+			this._then = then;
+			this.thenable = thenable;
+			this.resolver = resolver;
+		}
+
+		AssimilateTask.prototype.run = function() {
+			var h = this.resolver;
+			tryAssimilate(this._then, this.thenable, _resolve, _reject, _notify);
+
+			function _resolve(x) { h.resolve(x); }
+			function _reject(x)  { h.reject(x); }
+			function _notify(x)  { h.notify(x); }
+		};
+
+		function tryAssimilate(then, thenable, resolve, reject, notify) {
+			try {
+				then.call(thenable, resolve, reject, notify);
+			} catch (e) {
+				reject(e);
+			}
+		}
+
+		/**
+		 * Fold a handler value with z
+		 * @constructor
+		 */
+		function Fold(f, z, c, to) {
+			this.f = f; this.z = z; this.c = c; this.to = to;
+			this.resolver = failIfRejected;
+			this.receiver = this;
+		}
+
+		Fold.prototype.fulfilled = function(x) {
+			this.f.call(this.c, this.z, x, this.to);
+		};
+
+		Fold.prototype.rejected = function(x) {
+			this.to.reject(x);
+		};
+
+		Fold.prototype.progress = function(x) {
+			this.to.notify(x);
+		};
+
+		// Other helpers
+
+		/**
+		 * @param {*} x
+		 * @returns {boolean} true iff x is a trusted Promise
+		 */
+		function isPromise(x) {
+			return x instanceof Promise;
+		}
+
+		/**
+		 * Test just enough to rule out primitives, in order to take faster
+		 * paths in some code
+		 * @param {*} x
+		 * @returns {boolean} false iff x is guaranteed *not* to be a thenable
+		 */
+		function maybeThenable(x) {
+			return (typeof x === 'object' || typeof x === 'function') && x !== null;
+		}
+
+		function runContinuation1(f, h, receiver, next) {
+			if(typeof f !== 'function') {
+				return next.become(h);
+			}
+
+			Promise.enterContext(h);
+			tryCatchReject(f, h.value, receiver, next);
+			Promise.exitContext();
+		}
+
+		function runContinuation3(f, x, h, receiver, next) {
+			if(typeof f !== 'function') {
+				return next.become(h);
+			}
+
+			Promise.enterContext(h);
+			tryCatchReject3(f, x, h.value, receiver, next);
+			Promise.exitContext();
+		}
+
+		/**
+		 * @deprecated
+		 */
+		function runNotify(f, x, h, receiver, next) {
+			if(typeof f !== 'function') {
+				return next.notify(x);
+			}
+
+			Promise.enterContext(h);
+			tryCatchReturn(f, x, receiver, next);
+			Promise.exitContext();
+		}
+
+		function tryCatch2(f, a, b) {
+			try {
+				return f(a, b);
+			} catch(e) {
+				return reject(e);
+			}
+		}
+
+		/**
+		 * Return f.call(thisArg, x), or if it throws return a rejected promise for
+		 * the thrown exception
+		 */
+		function tryCatchReject(f, x, thisArg, next) {
+			try {
+				next.become(getHandler(f.call(thisArg, x)));
+			} catch(e) {
+				next.become(new Rejected(e));
+			}
+		}
+
+		/**
+		 * Same as above, but includes the extra argument parameter.
+		 */
+		function tryCatchReject3(f, x, y, thisArg, next) {
+			try {
+				f.call(thisArg, x, y, next);
+			} catch(e) {
+				next.become(new Rejected(e));
+			}
+		}
+
+		/**
+		 * @deprecated
+		 * Return f.call(thisArg, x), or if it throws, *return* the exception
+		 */
+		function tryCatchReturn(f, x, thisArg, next) {
+			try {
+				next.notify(f.call(thisArg, x));
+			} catch(e) {
+				next.notify(e);
+			}
+		}
+
+		function inherit(Parent, Child) {
+			Child.prototype = objectCreate(Parent.prototype);
+			Child.prototype.constructor = Child;
+		}
+
+		function snd(x, y) {
+			return y;
+		}
+
+		function noop() {}
+
+		function initEmitRejection() {
+			/*global process, self, CustomEvent*/
+			if(typeof process !== 'undefined' && process !== null
+				&& typeof process.emit === 'function') {
+				// Returning falsy here means to call the default
+				// onPotentiallyUnhandledRejection API.  This is safe even in
+				// browserify since process.emit always returns falsy in browserify:
+				// https://github.com/defunctzombie/node-process/blob/master/browser.js#L40-L46
+				return function(type, rejection) {
+					return type === 'unhandledRejection'
+						? process.emit(type, rejection.value, rejection)
+						: process.emit(type, rejection);
+				};
+			} else if(typeof self !== 'undefined' && typeof CustomEvent === 'function') {
+				return (function(noop, self, CustomEvent) {
+					var hasCustomEvent = false;
+					try {
+						var ev = new CustomEvent('unhandledRejection');
+						hasCustomEvent = ev instanceof CustomEvent;
+					} catch (e) {}
+
+					return !hasCustomEvent ? noop : function(type, rejection) {
+						var ev = new CustomEvent(type, {
+							detail: {
+								reason: rejection.value,
+								key: rejection
+							},
+							bubbles: false,
+							cancelable: true
+						});
+
+						return !self.dispatchEvent(ev);
+					};
+				}(noop, self, CustomEvent));
+			}
+
+			return noop;
+		}
+
+		return Promise;
+	};
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+}).call(this,require('_process'))
+
+},{"_process":1}],192:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+/** @author Brian Cavalier */
+/** @author John Hann */
+
+(function(define) { 'use strict';
+define(function() {
+
+	return {
+		pending: toPendingState,
+		fulfilled: toFulfilledState,
+		rejected: toRejectedState,
+		inspect: inspect
+	};
+
+	function toPendingState() {
+		return { state: 'pending' };
+	}
+
+	function toRejectedState(e) {
+		return { state: 'rejected', reason: e };
+	}
+
+	function toFulfilledState(x) {
+		return { state: 'fulfilled', value: x };
+	}
+
+	function inspect(handler) {
+		var state = handler.state();
+		return state === 0 ? toPendingState()
+			 : state > 0   ? toFulfilledState(handler.value)
+			               : toRejectedState(handler.value);
+	}
+
+});
+}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
+
+},{}],193:[function(require,module,exports){
+/** @license MIT License (c) copyright 2010-2014 original author or authors */
+
+/**
+ * Promises/A+ and when() implementation
+ * when is part of the cujoJS family of libraries (http://cujojs.com/)
+ * @author Brian Cavalier
+ * @author John Hann
+ */
+(function(define) { 'use strict';
+define(function (require) {
+
+	var timed = require('./lib/decorators/timed');
+	var array = require('./lib/decorators/array');
+	var flow = require('./lib/decorators/flow');
+	var fold = require('./lib/decorators/fold');
+	var inspect = require('./lib/decorators/inspect');
+	var generate = require('./lib/decorators/iterate');
+	var progress = require('./lib/decorators/progress');
+	var withThis = require('./lib/decorators/with');
+	var unhandledRejection = require('./lib/decorators/unhandledRejection');
+	var TimeoutError = require('./lib/TimeoutError');
+
+	var Promise = [array, flow, fold, generate, progress,
+		inspect, withThis, timed, unhandledRejection]
+		.reduce(function(Promise, feature) {
+			return feature(Promise);
+		}, require('./lib/Promise'));
+
+	var apply = require('./lib/apply')(Promise);
+
+	// Public API
+
+	when.promise     = promise;              // Create a pending promise
+	when.resolve     = Promise.resolve;      // Create a resolved promise
+	when.reject      = Promise.reject;       // Create a rejected promise
+
+	when.lift        = lift;                 // lift a function to return promises
+	when['try']      = attempt;              // call a function and return a promise
+	when.attempt     = attempt;              // alias for when.try
+
+	when.iterate     = Promise.iterate;      // DEPRECATED (use cujojs/most streams) Generate a stream of promises
+	when.unfold      = Promise.unfold;       // DEPRECATED (use cujojs/most streams) Generate a stream of promises
+
+	when.join        = join;                 // Join 2 or more promises
+
+	when.all         = all;                  // Resolve a list of promises
+	when.settle      = settle;               // Settle a list of promises
+
+	when.any         = lift(Promise.any);    // One-winner race
+	when.some        = lift(Promise.some);   // Multi-winner race
+	when.race        = lift(Promise.race);   // First-to-settle race
+
+	when.map         = map;                  // Array.map() for promises
+	when.filter      = filter;               // Array.filter() for promises
+	when.reduce      = lift(Promise.reduce);       // Array.reduce() for promises
+	when.reduceRight = lift(Promise.reduceRight);  // Array.reduceRight() for promises
+
+	when.isPromiseLike = isPromiseLike;      // Is something promise-like, aka thenable
+
+	when.Promise     = Promise;              // Promise constructor
+	when.defer       = defer;                // Create a {promise, resolve, reject} tuple
+
+	// Error types
+
+	when.TimeoutError = TimeoutError;
+
+	/**
+	 * Get a trusted promise for x, or by transforming x with onFulfilled
+	 *
+	 * @param {*} x
+	 * @param {function?} onFulfilled callback to be called when x is
+	 *   successfully fulfilled.  If promiseOrValue is an immediate value, callback
+	 *   will be invoked immediately.
+	 * @param {function?} onRejected callback to be called when x is
+	 *   rejected.
+	 * @param {function?} onProgress callback to be called when progress updates
+	 *   are issued for x. @deprecated
+	 * @returns {Promise} a new promise that will fulfill with the return
+	 *   value of callback or errback or the completion value of promiseOrValue if
+	 *   callback and/or errback is not supplied.
+	 */
+	function when(x, onFulfilled, onRejected, onProgress) {
+		var p = Promise.resolve(x);
+		if (arguments.length < 2) {
+			return p;
+		}
+
+		return p.then(onFulfilled, onRejected, onProgress);
+	}
+
+	/**
+	 * Creates a new promise whose fate is determined by resolver.
+	 * @param {function} resolver function(resolve, reject, notify)
+	 * @returns {Promise} promise whose fate is determine by resolver
+	 */
+	function promise(resolver) {
+		return new Promise(resolver);
+	}
+
+	/**
+	 * Lift the supplied function, creating a version of f that returns
+	 * promises, and accepts promises as arguments.
+	 * @param {function} f
+	 * @returns {Function} version of f that returns promises
+	 */
+	function lift(f) {
+		return function() {
+			for(var i=0, l=arguments.length, a=new Array(l); i<l; ++i) {
+				a[i] = arguments[i];
+			}
+			return apply(f, this, a);
+		};
+	}
+
+	/**
+	 * Call f in a future turn, with the supplied args, and return a promise
+	 * for the result.
+	 * @param {function} f
+	 * @returns {Promise}
+	 */
+	function attempt(f /*, args... */) {
+		/*jshint validthis:true */
+		for(var i=0, l=arguments.length-1, a=new Array(l); i<l; ++i) {
+			a[i] = arguments[i+1];
+		}
+		return apply(f, this, a);
+	}
+
+	/**
+	 * Creates a {promise, resolver} pair, either or both of which
+	 * may be given out safely to consumers.
+	 * @return {{promise: Promise, resolve: function, reject: function, notify: function}}
+	 */
+	function defer() {
+		return new Deferred();
+	}
+
+	function Deferred() {
+		var p = Promise._defer();
+
+		function resolve(x) { p._handler.resolve(x); }
+		function reject(x) { p._handler.reject(x); }
+		function notify(x) { p._handler.notify(x); }
+
+		this.promise = p;
+		this.resolve = resolve;
+		this.reject = reject;
+		this.notify = notify;
+		this.resolver = { resolve: resolve, reject: reject, notify: notify };
+	}
+
+	/**
+	 * Determines if x is promise-like, i.e. a thenable object
+	 * NOTE: Will return true for *any thenable object*, and isn't truly
+	 * safe, since it may attempt to access the `then` property of x (i.e.
+	 *  clever/malicious getters may do weird things)
+	 * @param {*} x anything
+	 * @returns {boolean} true if x is promise-like
+	 */
+	function isPromiseLike(x) {
+		return x && typeof x.then === 'function';
+	}
+
+	/**
+	 * Return a promise that will resolve only once all the supplied arguments
+	 * have resolved. The resolution value of the returned promise will be an array
+	 * containing the resolution values of each of the arguments.
+	 * @param {...*} arguments may be a mix of promises and values
+	 * @returns {Promise}
+	 */
+	function join(/* ...promises */) {
+		return Promise.all(arguments);
+	}
+
+	/**
+	 * Return a promise that will fulfill once all input promises have
+	 * fulfilled, or reject when any one input promise rejects.
+	 * @param {array|Promise} promises array (or promise for an array) of promises
+	 * @returns {Promise}
+	 */
+	function all(promises) {
+		return when(promises, Promise.all);
+	}
+
+	/**
+	 * Return a promise that will always fulfill with an array containing
+	 * the outcome states of all input promises.  The returned promise
+	 * will only reject if `promises` itself is a rejected promise.
+	 * @param {array|Promise} promises array (or promise for an array) of promises
+	 * @returns {Promise} promise for array of settled state descriptors
+	 */
+	function settle(promises) {
+		return when(promises, Promise.settle);
+	}
+
+	/**
+	 * Promise-aware array map function, similar to `Array.prototype.map()`,
+	 * but input array may contain promises or values.
+	 * @param {Array|Promise} promises array of anything, may contain promises and values
+	 * @param {function(x:*, index:Number):*} mapFunc map function which may
+	 *  return a promise or value
+	 * @returns {Promise} promise that will fulfill with an array of mapped values
+	 *  or reject if any input promise rejects.
+	 */
+	function map(promises, mapFunc) {
+		return when(promises, function(promises) {
+			return Promise.map(promises, mapFunc);
+		});
+	}
+
+	/**
+	 * Filter the provided array of promises using the provided predicate.  Input may
+	 * contain promises and values
+	 * @param {Array|Promise} promises array of promises and values
+	 * @param {function(x:*, index:Number):boolean} predicate filtering predicate.
+	 *  Must return truthy (or promise for truthy) for items to retain.
+	 * @returns {Promise} promise that will fulfill with an array containing all items
+	 *  for which predicate returned truthy.
+	 */
+	function filter(promises, predicate) {
+		return when(promises, function(promises) {
+			return Promise.filter(promises, predicate);
+		});
+	}
+
+	return when;
+});
+})(typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); });
+
+},{"./lib/Promise":176,"./lib/TimeoutError":178,"./lib/apply":179,"./lib/decorators/array":180,"./lib/decorators/flow":181,"./lib/decorators/fold":182,"./lib/decorators/inspect":183,"./lib/decorators/iterate":184,"./lib/decorators/progress":185,"./lib/decorators/timed":186,"./lib/decorators/unhandledRejection":187,"./lib/decorators/with":188}],194:[function(require,module,exports){
+/*
+ * Copyright 2013 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (/* require */) {
+
+		return {
+
+			/**
+			 * Find objects within a graph the contain a property of a certain name.
+			 *
+			 * NOTE: this method will not discover object graph cycles.
+			 *
+			 * @param {*} obj object to search on
+			 * @param {string} prop name of the property to search for
+			 * @param {Function} callback function to receive the found properties and their parent
+			 */
+			findProperties: function findProperties(obj, prop, callback) {
+				if (typeof obj !== 'object' || obj === null) { return; }
+				if (prop in obj) {
+					callback(obj[prop], obj, prop);
+				}
+				Object.keys(obj).forEach(function (key) {
+					findProperties(obj[key], prop, callback);
+				});
+			}
+
+		};
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],195:[function(require,module,exports){
+/*
+ * Copyright 2013 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (require) {
+
+		var when;
+
+		when = require('when');
+
+		/**
+		 * Create a promise whose work is started only when a handler is registered.
+		 *
+		 * The work function will be invoked at most once. Thrown values will result
+		 * in promise rejection.
+		 *
+		 * @param {Function} work function whose ouput is used to resolve the
+		 *   returned promise.
+		 * @returns {Promise} a lazy promise
+		 */
+		function lazyPromise(work) {
+			var defer, started, resolver, promise, then;
+
+			defer = when.defer();
+			started = false;
+
+			resolver = defer.resolver;
+			promise = defer.promise;
+			then = promise.then;
+
+			promise.then = function () {
+				if (!started) {
+					started = true;
+					when.attempt(work).then(resolver.resolve, resolver.reject);
+				}
+				return then.apply(promise, arguments);
+			};
+
+			return promise;
+		}
+
+		return lazyPromise;
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"when":193}],196:[function(require,module,exports){
+/*
+ * Copyright 2012-2013 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	// derived from dojo.mixin
+	define(function (/* require */) {
+
+		var empty = {};
+
+		/**
+		 * Mix the properties from the source object into the destination object.
+		 * When the same property occurs in more then one object, the right most
+		 * value wins.
+		 *
+		 * @param {Object} dest the object to copy properties to
+		 * @param {Object} sources the objects to copy properties from.  May be 1 to N arguments, but not an Array.
+		 * @return {Object} the destination object
+		 */
+		function mixin(dest /*, sources... */) {
+			var i, l, source, name;
+
+			if (!dest) { dest = {}; }
+			for (i = 1, l = arguments.length; i < l; i += 1) {
+				source = arguments[i];
+				for (name in source) {
+					if (!(name in dest) || (dest[name] !== source[name] && (!(name in empty) || empty[name] !== source[name]))) {
+						dest[name] = source[name];
+					}
+				}
+			}
+
+			return dest; // Object
+		}
+
+		return mixin;
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],197:[function(require,module,exports){
+/*
+ * Copyright 2012 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (/* require */) {
+
+		/**
+		 * Normalize HTTP header names using the pseudo camel case.
+		 *
+		 * For example:
+		 *   content-type         -> Content-Type
+		 *   accepts              -> Accepts
+		 *   x-custom-header-name -> X-Custom-Header-Name
+		 *
+		 * @param {string} name the raw header name
+		 * @return {string} the normalized header name
+		 */
+		function normalizeHeaderName(name) {
+			return name.toLowerCase()
+				.split('-')
+				.map(function (chunk) { return chunk.charAt(0).toUpperCase() + chunk.slice(1); })
+				.join('-');
+		}
+
+		return normalizeHeaderName;
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],198:[function(require,module,exports){
+/*
+ * Copyright 2014-2015 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (require) {
+
+		var when = require('when'),
+			normalizeHeaderName = require('./normalizeHeaderName');
+
+		function property(promise, name) {
+			return promise.then(
+				function (value) {
+					return value && value[name];
+				},
+				function (value) {
+					return when.reject(value && value[name]);
+				}
+			);
+		}
+
+		/**
+		 * Obtain the response entity
+		 *
+		 * @returns {Promise} for the response entity
+		 */
+		function entity() {
+			/*jshint validthis:true */
+			return property(this, 'entity');
+		}
+
+		/**
+		 * Obtain the response status
+		 *
+		 * @returns {Promise} for the response status
+		 */
+		function status() {
+			/*jshint validthis:true */
+			return property(property(this, 'status'), 'code');
+		}
+
+		/**
+		 * Obtain the response headers map
+		 *
+		 * @returns {Promise} for the response headers map
+		 */
+		function headers() {
+			/*jshint validthis:true */
+			return property(this, 'headers');
+		}
+
+		/**
+		 * Obtain a specific response header
+		 *
+		 * @param {String} headerName the header to retrieve
+		 * @returns {Promise} for the response header's value
+		 */
+		function header(headerName) {
+			/*jshint validthis:true */
+			headerName = normalizeHeaderName(headerName);
+			return property(this.headers(), headerName);
+		}
+
+		/**
+		 * Follow a related resource
+		 *
+		 * The relationship to follow may be define as a plain string, an object
+		 * with the rel and params, or an array containing one or more entries
+		 * with the previous forms.
+		 *
+		 * Examples:
+		 *   response.follow('next')
+		 *
+		 *   response.follow({ rel: 'next', params: { pageSize: 100 } })
+		 *
+		 *   response.follow([
+		 *       { rel: 'items', params: { projection: 'noImages' } },
+		 *       'search',
+		 *       { rel: 'findByGalleryIsNull', params: { projection: 'noImages' } },
+		 *       'items'
+		 *   ])
+		 *
+		 * @param {String|Object|Array} rels one, or more, relationships to follow
+		 * @returns ResponsePromise<Response> related resource
+		 */
+		function follow(rels) {
+			/*jshint validthis:true */
+			rels = [].concat(rels);
+			return make(when.reduce(rels, function (response, rel) {
+				if (typeof rel === 'string') {
+					rel = { rel: rel };
+				}
+				if (typeof response.entity.clientFor !== 'function') {
+					throw new Error('Hypermedia response expected');
+				}
+				var client = response.entity.clientFor(rel.rel);
+				return client({ params: rel.params });
+			}, this));
+		}
+
+		/**
+		 * Wrap a Promise as an ResponsePromise
+		 *
+		 * @param {Promise<Response>} promise the promise for an HTTP Response
+		 * @returns {ResponsePromise<Response>} wrapped promise for Response with additional helper methods
+		 */
+		function make(promise) {
+			promise.status = status;
+			promise.headers = headers;
+			promise.header = header;
+			promise.entity = entity;
+			promise.follow = follow;
+			return promise;
+		}
+
+		function responsePromise() {
+			return make(when.apply(when, arguments));
+		}
+
+		responsePromise.make = make;
+		responsePromise.reject = function (val) {
+			return make(when.reject(val));
+		};
+		responsePromise.promise = function (func) {
+			return make(when.promise(func));
+		};
+
+		return responsePromise;
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"./normalizeHeaderName":197,"when":193}],199:[function(require,module,exports){
+/*
+ * Copyright 2015 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	define(function (/* require */) {
+
+		var charMap;
+
+		charMap = (function () {
+			var strings = {
+				alpha: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
+				digit: '0123456789'
+			};
+
+			strings.genDelims = ':/?#[]@';
+			strings.subDelims = '!$&\'()*+,;=';
+			strings.reserved = strings.genDelims + strings.subDelims;
+			strings.unreserved = strings.alpha + strings.digit + '-._~';
+			strings.url = strings.reserved + strings.unreserved;
+			strings.scheme = strings.alpha + strings.digit + '+-.';
+			strings.userinfo = strings.unreserved + strings.subDelims + ':';
+			strings.host = strings.unreserved + strings.subDelims;
+			strings.port = strings.digit;
+			strings.pchar = strings.unreserved + strings.subDelims + ':@';
+			strings.segment = strings.pchar;
+			strings.path = strings.segment + '/';
+			strings.query = strings.pchar + '/?';
+			strings.fragment = strings.pchar + '/?';
+
+			return Object.keys(strings).reduce(function (charMap, set) {
+				charMap[set] = strings[set].split('').reduce(function (chars, myChar) {
+					chars[myChar] = true;
+					return chars;
+				}, {});
+				return charMap;
+			}, {});
+		}());
+
+		function encode(str, allowed) {
+			if (typeof str !== 'string') {
+				throw new Error('String required for URL encoding');
+			}
+			return str.split('').map(function (myChar) {
+				if (allowed.hasOwnProperty(myChar)) {
+					return myChar;
+				}
+				var code = myChar.charCodeAt(0);
+				if (code <= 127) {
+					return '%' + code.toString(16).toUpperCase();
+				}
+				else {
+					return encodeURIComponent(myChar).toUpperCase();
+				}
+			}).join('');
+		}
+
+		function makeEncoder(allowed) {
+			allowed = allowed || charMap.unreserved;
+			return function (str) {
+				return encode(str, allowed);
+			};
+		}
+
+		function decode(str) {
+			return decodeURIComponent(str);
+		}
+
+		return {
+
+			/*
+			 * Decode URL encoded strings
+			 *
+			 * @param {string} URL encoded string
+			 * @returns {string} URL decoded string
+			 */
+			decode: decode,
+
+			/*
+			 * URL encode a string
+			 *
+			 * All but alpha-numerics and a very limited set of punctuation - . _ ~ are
+			 * encoded.
+			 *
+			 * @param {string} string to encode
+			 * @returns {string} URL encoded string
+			 */
+			encode: makeEncoder(),
+
+			/*
+			* URL encode a URL
+			*
+			* All character permitted anywhere in a URL are left unencoded even
+			* if that character is not permitted in that portion of a URL.
+			*
+			* Note: This method is typically not what you want.
+			*
+			* @param {string} string to encode
+			* @returns {string} URL encoded string
+			*/
+			encodeURL: makeEncoder(charMap.url),
+
+			/*
+			 * URL encode the scheme portion of a URL
+			 *
+			 * @param {string} string to encode
+			 * @returns {string} URL encoded string
+			 */
+			encodeScheme: makeEncoder(charMap.scheme),
+
+			/*
+			 * URL encode the user info portion of a URL
+			 *
+			 * @param {string} string to encode
+			 * @returns {string} URL encoded string
+			 */
+			encodeUserInfo: makeEncoder(charMap.userinfo),
+
+			/*
+			 * URL encode the host portion of a URL
+			 *
+			 * @param {string} string to encode
+			 * @returns {string} URL encoded string
+			 */
+			encodeHost: makeEncoder(charMap.host),
+
+			/*
+			 * URL encode the port portion of a URL
+			 *
+			 * @param {string} string to encode
+			 * @returns {string} URL encoded string
+			 */
+			encodePort: makeEncoder(charMap.port),
+
+			/*
+			 * URL encode a path segment portion of a URL
+			 *
+			 * @param {string} string to encode
+			 * @returns {string} URL encoded string
+			 */
+			encodePathSegment: makeEncoder(charMap.segment),
+
+			/*
+			 * URL encode the path portion of a URL
+			 *
+			 * @param {string} string to encode
+			 * @returns {string} URL encoded string
+			 */
+			encodePath: makeEncoder(charMap.path),
+
+			/*
+			 * URL encode the query portion of a URL
+			 *
+			 * @param {string} string to encode
+			 * @returns {string} URL encoded string
+			 */
+			encodeQuery: makeEncoder(charMap.query),
+
+			/*
+			 * URL encode the fragment portion of a URL
+			 *
+			 * @param {string} string to encode
+			 * @returns {string} URL encoded string
+			 */
+			encodeFragment: makeEncoder(charMap.fragment)
+
+		};
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{}],200:[function(require,module,exports){
+/*
+ * Copyright 2015 the original author or authors
+ * @license MIT, see LICENSE.txt for details
+ *
+ * @author Scott Andrews
+ */
+
+(function (define) {
+	'use strict';
+
+	var undef;
+
+	define(function (require) {
+
+		var uriEncoder, operations, prefixRE;
+
+		uriEncoder = require('./uriEncoder');
+
+		prefixRE = /^([^:]*):([0-9]+)$/;
+		operations = {
+			'':  { first: '',  separator: ',', named: false, empty: '',  encoder: uriEncoder.encode },
+			'+': { first: '',  separator: ',', named: false, empty: '',  encoder: uriEncoder.encodeURL },
+			'#': { first: '#', separator: ',', named: false, empty: '',  encoder: uriEncoder.encodeURL },
+			'.': { first: '.', separator: '.', named: false, empty: '',  encoder: uriEncoder.encode },
+			'/': { first: '/', separator: '/', named: false, empty: '',  encoder: uriEncoder.encode },
+			';': { first: ';', separator: ';', named: true,  empty: '',  encoder: uriEncoder.encode },
+			'?': { first: '?', separator: '&', named: true,  empty: '=', encoder: uriEncoder.encode },
+			'&': { first: '&', separator: '&', named: true,  empty: '=', encoder: uriEncoder.encode },
+			'=': { reserved: true },
+			',': { reserved: true },
+			'!': { reserved: true },
+			'@': { reserved: true },
+			'|': { reserved: true }
+		};
+
+		function apply(operation, expression, params) {
+			/*jshint maxcomplexity:11 */
+			return expression.split(',').reduce(function (result, variable) {
+				var opts, value;
+
+				opts = {};
+				if (variable.slice(-1) === '*') {
+					variable = variable.slice(0, -1);
+					opts.explode = true;
+				}
+				if (prefixRE.test(variable)) {
+					var prefix = prefixRE.exec(variable);
+					variable = prefix[1];
+					opts.maxLength = parseInt(prefix[2]);
+				}
+
+				variable = uriEncoder.decode(variable);
+				value = params[variable];
+
+				if (value === undef || value === null) {
+					return result;
+				}
+				if (Array.isArray(value)) {
+					result += value.reduce(function (result, value) {
+						if (result.length) {
+							result += opts.explode ? operation.separator : ',';
+							if (operation.named && opts.explode) {
+								result += operation.encoder(variable);
+								result += value.length ? '=' : operation.empty;
+							}
+						}
+						else {
+							result += operation.first;
+							if (operation.named) {
+								result += operation.encoder(variable);
+								result += value.length ? '=' : operation.empty;
+							}
+						}
+						result += operation.encoder(value);
+						return result;
+					}, '');
+				}
+				else if (typeof value === 'object') {
+					result += Object.keys(value).reduce(function (result, name) {
+						if (result.length) {
+							result += opts.explode ? operation.separator : ',';
+						}
+						else {
+							result += operation.first;
+							if (operation.named && !opts.explode) {
+								result += operation.encoder(variable);
+								result += value[name].length ? '=' : operation.empty;
+							}
+						}
+						result += operation.encoder(name);
+						result += opts.explode ? '=' : ',';
+						result += operation.encoder(value[name]);
+						return result;
+					}, '');
+				}
+				else {
+					value = String(value);
+					if (opts.maxLength) {
+						value = value.slice(0, opts.maxLength);
+					}
+					result += result.length ? operation.separator : operation.first;
+					if (operation.named) {
+						result += operation.encoder(variable);
+						result += value.length ? '=' : operation.empty;
+					}
+					result += operation.encoder(value);
+				}
+
+				return result;
+			}, '');
+		}
+
+		function expandExpression(expression, params) {
+			var operation;
+
+			operation = operations[expression.slice(0,1)];
+			if (operation) {
+				expression = expression.slice(1);
+			}
+			else {
+				operation = operations[''];
+			}
+
+			if (operation.reserved) {
+				throw new Error('Reserved expression operations are not supported');
+			}
+
+			return apply(operation, expression, params);
+		}
+
+		function expandTemplate(template, params) {
+			var start, end, uri;
+
+			uri = '';
+			end = 0;
+			while (true) {
+				start = template.indexOf('{', end);
+				if (start === -1) {
+					// no more expressions
+					uri += template.slice(end);
+					break;
+				}
+				uri += template.slice(end, start);
+				end = template.indexOf('}', start) + 1;
+				uri += expandExpression(template.slice(start + 1, end - 1), params);
+			}
+
+			return uri;
+		}
+
+		return {
+
+			/**
+			 * Expand a URI Template with parameters to form a URI.
+			 *
+			 * Full implementation (level 4) of rfc6570.
+			 * @see https://tools.ietf.org/html/rfc6570
+			 *
+			 * @param {string} template URI template
+			 * @param {Object} [params] params to apply to the template durring expantion
+			 * @returns {string} expanded URI
+			 */
+			expand: expandTemplate
+
+		};
+
+	});
+
+}(
+	typeof define === 'function' && define.amd ? define : function (factory) { module.exports = factory(require); }
+	// Boilerplate for AMD and Node
+));
+
+},{"./uriEncoder":199}],201:[function(require,module,exports){
 // For an introduction to the Blank template, see the following documentation:
 // http://go.microsoft.com/fwlink/?LinkID=397705
 // To debug code on page load in Ripple or on Android devices/emulators: launch your app, set breakpoints, 
 // and then run "window.location.reload()" in the JavaScript Console.
+/// <reference path="typings/cordova/plugins/InAppBrowser.d.ts"/>
 var React = require('react');
 var ReactDOM = require('react-dom');
+var hello = require('hellojs');
+var rest = require('rest');
+var mime = require('rest/interceptor/mime');
+var interceptor = require('rest/interceptor');
 var DiversityMobile2;
 (function (DiversityMobile2) {
     "use strict";
+    var api_server = "https://diversityapi.azurewebsites.net";
+    var api_base = api_server + "/api";
+    var ext_logins = api_base + "/account/ExternalLogins?returnUrl=%2F&generateState=true";
+    var correlationState = {
+        cookieName: ".AspNet.Correlation.",
+        cookieValue: ""
+    };
+    var correlationInterceptor = interceptor({
+        response: function (response, config, meta) {
+            var set_cookies = response.headers["Set-Cookie"];
+            if (set_cookies) {
+                // if only a single header, wrap it in an array
+                if (typeof (set_cookies) === 'string') {
+                    set_cookies = [set_cookies];
+                }
+                for (var i = 0; i < set_cookies.length; i++) {
+                    var cookie = set_cookies[i];
+                    var nv = cookie.split('=');
+                    var name = nv[0];
+                    if (name === correlationState.cookieName) {
+                        correlationState.cookieValue = cookie;
+                    }
+                }
+            }
+            return response;
+        },
+        request: function (request, config, meta) {
+            if (correlationState.cookieValue) {
+                var cookies = request.headers["Cookie"];
+                if (cookies !== "") {
+                    cookies += "; ";
+                }
+                cookies += correlationState.cookieValue;
+                request.headers["Cookie"] = cookies;
+            }
+            return request;
+        }
+    });
     var Application;
     (function (Application) {
         function initialize() {
             document.addEventListener('deviceready', onDeviceReady, false);
         }
         Application.initialize = initialize;
+        function onLoginClick() {
+            hello('windows').login();
+        }
+        function onLogin(auth) {
+            // Call user information, for the given network
+            hello(auth.network).api('/me').then(function (r) {
+                // Inject it into the container
+                var label = document.getElementById('profile_' + auth.network);
+                if (!label) {
+                    label = document.createElement('div');
+                    label.id = 'profile_' + auth.network;
+                    document.getElementById('profile').appendChild(label);
+                }
+                label.innerHTML = '<img src="' + r.thumbnail + '" /> Hey ' + r.name;
+            });
+            var session = hello(auth.network).getAuthResponse();
+            var client = rest
+                .wrap(mime)
+                .wrap(correlationInterceptor);
+            client(ext_logins).then(function (response) {
+                var entity = response.entity[0];
+                var uri = api_server + entity.Url;
+                var browser = window.open(uri);
+                browser.addEventListener("loadstart", function (event) {
+                    console.log(event);
+                });
+            });
+        }
         function onDeviceReady() {
-            // Handle the Cordova pause and resume events
+            // Handle the Cordova pause and resume events 
             document.addEventListener('pause', onPause, false);
             document.addEventListener('resume', onResume, false);
+            hello.init({
+                windows: '000000004C0FE46A'
+            }, { redirect_uri: 'https://diversityapi.azurewebsites.net/redirect.html' });
+            hello.on('auth.login', onLogin);
             // TODO: Cordova has been loaded. Perform any initialization that requires Cordova here.
-            ReactDOM.render(React.createElement("h1", null, "Hello, world!"), document.getElementById('example'));
+            var button = ReactDOM.render(React.createElement("button", {"onClick": onLoginClick}, " Windows Hello"), document.getElementById('example'));
         }
         function onPause() {
             // TODO: This application has been suspended. Save application state here.
@@ -19115,7 +29544,7 @@ var DiversityMobile2;
 })(DiversityMobile2 || (DiversityMobile2 = {}));
 
 
-},{"react":158,"react-dom":2}]},{},[159])
+},{"hellojs":2,"react":159,"react-dom":3,"rest":161,"rest/interceptor":165,"rest/interceptor/mime":166}]},{},[201])
 
 
-//# sourceMappingURL=index.js.map
+//# sourceMappingURL=bundle.js.map
