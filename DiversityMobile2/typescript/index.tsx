@@ -12,53 +12,27 @@ import hello = require('hellojs');
 import rest = require('rest');
 import mime = require('rest/interceptor/mime');
 import interceptor = require('rest/interceptor');
-
+import when = require('when');
+ 
 module DiversityMobile2 {
     "use strict";
     var api_server = "https://diversityapi.azurewebsites.net"
     var api_base = api_server + "/api";
     var ext_logins = api_base + "/account/ExternalLogins?returnUrl=%2F&generateState=true";
-
-    var correlationState = {
-        cookieName: ".AspNet.Correlation.",
-        cookieValue: ""
-    };
-    var correlationInterceptor = interceptor({
-        response: function (response, config, meta) {
-            var set_cookies = response.headers["Set-Cookie"];
-            if (set_cookies) {
-                // if only a single header, wrap it in an array
-                if (typeof (set_cookies) === 'string') {
-                    set_cookies = [set_cookies];
-                }
-                for (var i = 0; i < set_cookies.length; i++) {
-                    var cookie = set_cookies[i];
-                    var nv = cookie.split('=');
-                    var name = nv[0];
-                    if (name === correlationState.cookieName) {
-                        correlationState.cookieValue = cookie;
-                    }
-                }
-            }
-            return response;
-        },
-        request: function (request, config, meta) {
-            if (correlationState.cookieValue) {
-                var cookies = request.headers["Cookie"];
-                if (cookies !== "") {
-                    cookies += "; ";
-                }
-                cookies += correlationState.cookieValue;
-
-                request.headers["Cookie"] = cookies;
-            }
-            return request;
-        }
-    });
+    var ext_register = api_base + "/account/";
 
     export module Application {
+        var Token = "";
+
         export function initialize() {
             document.addEventListener('deviceready', onDeviceReady, false);  
+        }
+
+        function getAccessToken(url) {
+            var prefix = "#access_token=";
+            var regex = new RegExp(prefix + "([^&#]+)"),
+                results = regex.exec(url);
+            return results === null ? "" : results[0].replace(prefix, "");
         }
   
         function onLoginClick() {
@@ -70,9 +44,21 @@ module DiversityMobile2 {
                 var entity = response.entity[0];
                 var uri = api_server + entity.Url;
 
-                var browser = window.open(uri);
+                var browser = window.open(uri, "_blank", "location=yes");
 
                 browser.addEventListener("loadstart", (event) => {
+                    console.log(event);                   
+
+                    var token = getAccessToken(event.url);
+                    if (token !== "") {
+                        Token = token;
+
+                        
+                        browser.close();
+                    }
+                });
+
+                browser.addEventListener("loaderror", (event) => {
                     console.log(event);
                 });
             });
@@ -101,11 +87,11 @@ module DiversityMobile2 {
             document.addEventListener('pause', onPause, false);
             document.addEventListener('resume', onResume, false); 
 
-            hello.init({
+            /*hello.init({
                 windows: '000000004C0FE46A'
-            }, { redirect_uri: 'https://diversityapi.azurewebsites.net/redirect.html' });
+            }, { redirect_uri: 'https://diversityapi.azurewebsites.net/redirect.html' });*/
 
-            hello.on('auth.login', onLogin);
+            //hello.on('auth.login', onLogin);
             
             // TODO: Cordova has been loaded. Perform any initialization that requires Cordova here.
 

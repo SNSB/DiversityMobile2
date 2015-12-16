@@ -29444,56 +29444,45 @@ var ReactDOM = require('react-dom');
 var hello = require('hellojs');
 var rest = require('rest');
 var mime = require('rest/interceptor/mime');
-var interceptor = require('rest/interceptor');
 var DiversityMobile2;
 (function (DiversityMobile2) {
     "use strict";
     var api_server = "https://diversityapi.azurewebsites.net";
     var api_base = api_server + "/api";
     var ext_logins = api_base + "/account/ExternalLogins?returnUrl=%2F&generateState=true";
-    var correlationState = {
-        cookieName: ".AspNet.Correlation.",
-        cookieValue: ""
-    };
-    var correlationInterceptor = interceptor({
-        response: function (response, config, meta) {
-            var set_cookies = response.headers["Set-Cookie"];
-            if (set_cookies) {
-                // if only a single header, wrap it in an array
-                if (typeof (set_cookies) === 'string') {
-                    set_cookies = [set_cookies];
-                }
-                for (var i = 0; i < set_cookies.length; i++) {
-                    var cookie = set_cookies[i];
-                    var nv = cookie.split('=');
-                    var name = nv[0];
-                    if (name === correlationState.cookieName) {
-                        correlationState.cookieValue = cookie;
-                    }
-                }
-            }
-            return response;
-        },
-        request: function (request, config, meta) {
-            if (correlationState.cookieValue) {
-                var cookies = request.headers["Cookie"];
-                if (cookies !== "") {
-                    cookies += "; ";
-                }
-                cookies += correlationState.cookieValue;
-                request.headers["Cookie"] = cookies;
-            }
-            return request;
-        }
-    });
+    var ext_register = api_base + "/account/";
     var Application;
     (function (Application) {
+        var Token = "";
         function initialize() {
             document.addEventListener('deviceready', onDeviceReady, false);
         }
         Application.initialize = initialize;
+        function getAccessToken(url) {
+            var prefix = "#access_token=";
+            var regex = new RegExp(prefix + "([^&#]+)"), results = regex.exec(url);
+            return results === null ? "" : results[0].replace(prefix, "");
+        }
         function onLoginClick() {
-            hello('windows').login();
+            //hello('windows').login();
+            var client = rest
+                .wrap(mime);
+            client(ext_logins).then(function (response) {
+                var entity = response.entity[0];
+                var uri = api_server + entity.Url;
+                var browser = window.open(uri, "_blank", "location=yes");
+                browser.addEventListener("loadstart", function (event) {
+                    console.log(event);
+                    var token = getAccessToken(event.url);
+                    if (token !== "") {
+                        Token = token;
+                        browser.close();
+                    }
+                });
+                browser.addEventListener("loaderror", function (event) {
+                    console.log(event);
+                });
+            });
         }
         function onLogin(auth) {
             // Call user information, for the given network
@@ -29508,26 +29497,15 @@ var DiversityMobile2;
                 label.innerHTML = '<img src="' + r.thumbnail + '" /> Hey ' + r.name;
             });
             var session = hello(auth.network).getAuthResponse();
-            var client = rest
-                .wrap(mime)
-                .wrap(correlationInterceptor);
-            client(ext_logins).then(function (response) {
-                var entity = response.entity[0];
-                var uri = api_server + entity.Url;
-                var browser = window.open(uri);
-                browser.addEventListener("loadstart", function (event) {
-                    console.log(event);
-                });
-            });
         }
         function onDeviceReady() {
             // Handle the Cordova pause and resume events 
             document.addEventListener('pause', onPause, false);
             document.addEventListener('resume', onResume, false);
-            hello.init({
+            /*hello.init({
                 windows: '000000004C0FE46A'
-            }, { redirect_uri: 'https://diversityapi.azurewebsites.net/redirect.html' });
-            hello.on('auth.login', onLogin);
+            }, { redirect_uri: 'https://diversityapi.azurewebsites.net/redirect.html' });*/
+            //hello.on('auth.login', onLogin);
             // TODO: Cordova has been loaded. Perform any initialization that requires Cordova here.
             var button = ReactDOM.render(React.createElement("button", {"onClick": onLoginClick}, " Windows Hello"), document.getElementById('example'));
         }
@@ -29544,7 +29522,7 @@ var DiversityMobile2;
 })(DiversityMobile2 || (DiversityMobile2 = {}));
 
 
-},{"hellojs":2,"react":159,"react-dom":3,"rest":161,"rest/interceptor":165,"rest/interceptor/mime":166}]},{},[201])
+},{"hellojs":2,"react":159,"react-dom":3,"rest":161,"rest/interceptor/mime":166}]},{},[201])
 
 
 //# sourceMappingURL=bundle.js.map
