@@ -1,0 +1,1 @@
+{"version":3,"file":"authorization.js","sourceRoot":"","sources":["authorization.ts"],"names":[],"mappings":"AAAA,IAAI,OAAO,GAAG,kBAAkB,CAAC;AAEjC,IAAI,CAAC,QAAQ,CAAC,OAAO,CAAC,CAAC;AAEvB,QAAQ,CAAC,KAAK,EAAE;AAChB,CAAC,CAAC,CAAC","sourcesContent":["var modPath = '../authorization';\r\n\r\njest.dontMock(modPath);\r\n\r\ndescribe('sum', function () {\r\n});"]}
