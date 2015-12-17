@@ -29434,6 +29434,28 @@ define(function (require) {
 ));
 
 },{"./uriEncoder":199}],201:[function(require,module,exports){
+var interceptor = require('rest/interceptor');
+module.exports = interceptor({
+    init: function (config) {
+        return config;
+    },
+    request: function (request, config, meta) {
+        if (config.token) {
+            var headers = request.headers || (request.headers = {});
+            headers["Authorization"] = "bearer " + config.token;
+        }
+        return request;
+    },
+    error: function (response, config, meta) {
+        // Unauthorized? -> get a new token and retry
+        if (response.status.code == 401) {
+        }
+        return response;
+    }
+});
+
+
+},{"rest/interceptor":165}],202:[function(require,module,exports){
 // For an introduction to the Blank template, see the following documentation:
 // http://go.microsoft.com/fwlink/?LinkID=397705
 // To debug code on page load in Ripple or on Android devices/emulators: launch your app, set breakpoints, 
@@ -29444,6 +29466,7 @@ var ReactDOM = require('react-dom');
 var hello = require('hellojs');
 var rest = require('rest');
 var mime = require('rest/interceptor/mime');
+var authorization = require('./authorization');
 var DiversityMobile2;
 (function (DiversityMobile2) {
     "use strict";
@@ -29451,9 +29474,12 @@ var DiversityMobile2;
     var api_base = api_server + "/api";
     var ext_logins = api_base + "/account/ExternalLogins?returnUrl=%2F&generateState=true";
     var ext_register = api_base + "/account/";
+    var user_info = api_base + "/account/UserInfo";
     var Application;
     (function (Application) {
         var Token = "";
+        var Client = rest.wrap(mime);
+        var APIClient = undefined;
         function initialize() {
             document.addEventListener('deviceready', onDeviceReady, false);
         }
@@ -29463,20 +29489,25 @@ var DiversityMobile2;
             var regex = new RegExp(prefix + "([^&#]+)"), results = regex.exec(url);
             return results === null ? "" : results[0].replace(prefix, "");
         }
+        function getProfile() {
+            APIClient(user_info).then(function (resp) {
+                console.log(resp);
+            });
+        }
         function onLoginClick() {
             //hello('windows').login();
-            var client = rest
-                .wrap(mime);
-            client(ext_logins).then(function (response) {
+            Client(ext_logins).then(function (response) {
                 var entity = response.entity[0];
                 var uri = api_server + entity.Url;
-                var browser = window.open(uri, "_blank", "location=yes");
+                var browser = cordova.InAppBrowser.open(uri, "_blank", "location=yes");
                 browser.addEventListener("loadstart", function (event) {
                     console.log(event);
                     var token = getAccessToken(event.url);
                     if (token !== "") {
                         Token = token;
+                        APIClient = Client.wrap(authorization, { token: Token });
                         browser.close();
+                        getProfile();
                     }
                 });
                 browser.addEventListener("loaderror", function (event) {
@@ -29522,7 +29553,7 @@ var DiversityMobile2;
 })(DiversityMobile2 || (DiversityMobile2 = {}));
 
 
-},{"hellojs":2,"react":159,"react-dom":3,"rest":161,"rest/interceptor/mime":166}]},{},[201])
+},{"./authorization":201,"hellojs":2,"react":159,"react-dom":3,"rest":161,"rest/interceptor/mime":166}]},{},[202])
 
 
 //# sourceMappingURL=bundle.js.map

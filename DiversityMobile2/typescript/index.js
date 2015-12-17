@@ -8,6 +8,7 @@ var ReactDOM = require('react-dom');
 var hello = require('hellojs');
 var rest = require('rest');
 var mime = require('rest/interceptor/mime');
+var authorization = require('./authorization');
 var DiversityMobile2;
 (function (DiversityMobile2) {
     "use strict";
@@ -15,9 +16,12 @@ var DiversityMobile2;
     var api_base = api_server + "/api";
     var ext_logins = api_base + "/account/ExternalLogins?returnUrl=%2F&generateState=true";
     var ext_register = api_base + "/account/";
+    var user_info = api_base + "/account/UserInfo";
     var Application;
     (function (Application) {
         var Token = "";
+        var Client = rest.wrap(mime);
+        var APIClient = undefined;
         function initialize() {
             document.addEventListener('deviceready', onDeviceReady, false);
         }
@@ -27,23 +31,28 @@ var DiversityMobile2;
             var regex = new RegExp(prefix + "([^&#]+)"), results = regex.exec(url);
             return results === null ? "" : results[0].replace(prefix, "");
         }
+        function getProfile() {
+            APIClient(user_info).then(function (resp) {
+                console.log(resp);
+            });
+        }
         function onLoginClick() {
             //hello('windows').login();
-            var client = rest
-                .wrap(mime);
-            client(ext_logins).then(function (response) {
+            Client(ext_logins).then(function (response) {
                 var entity = response.entity[0];
                 var uri = api_server + entity.Url;
-                var browser = window.open(uri, "_blank", "location=yes");
-                browser.addEventListener("loadstart", (event) => {
+                var browser = cordova.InAppBrowser.open(uri, "_blank", "location=yes");
+                browser.addEventListener("loadstart", function (event) {
                     console.log(event);
                     var token = getAccessToken(event.url);
                     if (token !== "") {
                         Token = token;
+                        APIClient = Client.wrap(authorization, { token: Token });
                         browser.close();
+                        getProfile();
                     }
                 });
-                browser.addEventListener("loaderror", (event) => {
+                browser.addEventListener("loaderror", function (event) {
                     console.log(event);
                 });
             });
