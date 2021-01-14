@@ -8,7 +8,6 @@
     "gulp": "3.9.0",
     "gulp-sourcemaps": "1.6.0",
     "gulp-tsd": "0.0.4",
-    "hellojs": "1.9.8",
     "jest-cli": "^0.8.2",
     "react": "0.14.3",
     "react-dom": "0.14.3",
